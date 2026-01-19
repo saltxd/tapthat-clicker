@@ -74,25 +74,6 @@ def activate_app(owner_name):
     return False
 
 
-def has_screen_recording_permission():
-    """Check if we have screen recording permission WITHOUT triggering the prompt."""
-    try:
-        windows = CGWindowListCopyWindowInfo(
-            kCGWindowListOptionOnScreenOnly, kCGNullWindowID
-        )
-        if not windows:
-            return False
-        # If we can see window names, we have permission
-        for window in windows:
-            name = window.get('kCGWindowName')
-            if name:
-                return True
-        # Could be no windows have names, but if we got windows, likely have permission
-        return len(windows) > 0
-    except Exception:
-        return False
-
-
 def find_iphone_window():
     """Find the iPhone Mirroring window and return its info."""
     windows = CGWindowListCopyWindowInfo(

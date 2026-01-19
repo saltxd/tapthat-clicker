@@ -259,7 +259,7 @@ class WannaTapThatApp:
                 return
 
         try:
-            from clicker import find_iphone_window
+            from clicker import find_iphone_window, capture_window
         except ImportError as e:
             messagebox.showerror("Error", f"Failed to import clicker module:\n{e}")
             self.root.lift()
@@ -273,9 +273,26 @@ class WannaTapThatApp:
                 "iPhone Not Found",
                 "Can't find iPhone Mirroring window.\n\n"
                 "Make sure:\n"
-                "1. iPhone Mirroring is open and visible\n"
+                "1. iPhone Mirroring is open\n"
                 "2. Screen Recording permission is granted\n\n"
-                "If you just granted permission, restart the app."
+                "Go to System Settings > Privacy & Security > Screen Recording"
+            )
+            self.root.lift()
+            self.root.focus_force()
+            return
+
+        # Try to capture - this will fail if no permission
+        try:
+            test_capture = capture_window(window['id'])
+            if test_capture is None:
+                raise Exception("Capture returned None")
+        except Exception:
+            messagebox.showerror(
+                "Permission Required",
+                "Can't capture screen.\n\n"
+                "Grant Screen Recording permission:\n"
+                "System Settings > Privacy & Security > Screen Recording\n\n"
+                "Then restart the app."
             )
             self.root.lift()
             self.root.focus_force()
