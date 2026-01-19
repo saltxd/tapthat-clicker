@@ -258,36 +258,24 @@ class WannaTapThatApp:
                 self.root.focus_force()
                 return
 
-        # Check screen recording permission FIRST (before any capture attempt)
         try:
-            from clicker import has_screen_recording_permission, find_iphone_window
+            from clicker import find_iphone_window
         except ImportError as e:
             messagebox.showerror("Error", f"Failed to import clicker module:\n{e}")
             self.root.lift()
             self.root.focus_force()
             return
 
-        if not has_screen_recording_permission():
-            messagebox.showwarning(
-                "Permission Required",
-                "Screen Recording permission is needed.\n\n"
-                "1. Go to System Settings > Privacy & Security\n"
-                "2. Click Screen Recording\n"
-                "3. Enable WannaTapThat\n"
-                "4. Restart this app\n\n"
-                "The app cannot work without this permission."
-            )
-            self.root.lift()
-            self.root.focus_force()
-            return
-
-        # Check for iPhone window (now that we have permission)
+        # Check for iPhone window
         window = find_iphone_window()
         if not window:
             messagebox.showerror(
                 "iPhone Not Found",
                 "Can't find iPhone Mirroring window.\n\n"
-                "Make sure iPhone Mirroring is open and visible."
+                "Make sure:\n"
+                "1. iPhone Mirroring is open and visible\n"
+                "2. Screen Recording permission is granted\n\n"
+                "If you just granted permission, restart the app."
             )
             self.root.lift()
             self.root.focus_force()
@@ -342,7 +330,8 @@ class WannaTapThatApp:
         max_likes = self.get_max_likes()
         sent = 0
         consecutive_failures = 0
-        max_failures = 10
+        capture_failures = 0
+        max_failures = 5
         dot_cycle = 0
 
         while self.running:
@@ -352,7 +341,12 @@ class WannaTapThatApp:
 
             # Too many failures in a row
             if consecutive_failures >= max_failures:
-                self.update_status(f"Stopped: {max_failures} failures in a row")
+                self.update_status("Stopped: too many failures")
+                break
+
+            # If capture keeps failing, it's likely a permission issue - stop immediately
+            if capture_failures >= 2:
+                self.update_status("Screen Recording permission needed")
                 break
 
             # Update display with animated dots
@@ -377,10 +371,11 @@ class WannaTapThatApp:
 
                 image = capture_window(window["id"])
                 if image is None:
-                    print("  FAIL: Could not capture window")
-                    self.update_status("Failed to capture window")
+                    print("  FAIL: Could not capture window (permission issue?)")
+                    self.update_status("Capture failed")
                     consecutive_failures += 1
-                    time.sleep(1)
+                    capture_failures += 1
+                    time.sleep(0.5)
                     continue
 
                 print(f"  Captured: {image.size}")
