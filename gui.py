@@ -258,40 +258,36 @@ class WannaTapThatApp:
                 self.root.focus_force()
                 return
 
-        # Check iPhone window
+        # Check screen recording permission FIRST (before any capture attempt)
         try:
-            from clicker import find_iphone_window
-            window = find_iphone_window()
+            from clicker import has_screen_recording_permission, find_iphone_window
         except ImportError as e:
-            messagebox.showerror(
-                "Error",
-                f"Failed to import clicker module:\n{e}"
-            )
+            messagebox.showerror("Error", f"Failed to import clicker module:\n{e}")
             self.root.lift()
             self.root.focus_force()
             return
-        except Exception as e:
-            # Catch permission errors or other issues
-            messagebox.showerror(
+
+        if not has_screen_recording_permission():
+            messagebox.showwarning(
                 "Permission Required",
-                "Screen Recording permission is required.\n\n"
-                "Go to System Settings > Privacy & Security > Screen Recording\n"
-                "and enable WannaTapThat, then try again."
+                "Screen Recording permission is needed.\n\n"
+                "1. Go to System Settings > Privacy & Security\n"
+                "2. Click Screen Recording\n"
+                "3. Enable WannaTapThat\n"
+                "4. Restart this app\n\n"
+                "The app cannot work without this permission."
             )
             self.root.lift()
             self.root.focus_force()
             return
 
+        # Check for iPhone window (now that we have permission)
+        window = find_iphone_window()
         if not window:
             messagebox.showerror(
-                "iPhone Mirroring Not Found",
-                "Cannot find iPhone Mirroring window!\n\n"
-                "Make sure:\n"
-                "1. iPhone Mirroring app is open\n"
-                "2. Your iPhone is connected\n"
-                "3. Hinge is visible on screen\n\n"
-                "If you just granted Screen Recording permission,\n"
-                "you may need to restart the app."
+                "iPhone Not Found",
+                "Can't find iPhone Mirroring window.\n\n"
+                "Make sure iPhone Mirroring is open and visible."
             )
             self.root.lift()
             self.root.focus_force()
