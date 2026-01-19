@@ -1,0 +1,11 @@
+# Core automation
+pyobjc-framework-Quartz>=10.0
+pyobjc-framework-Cocoa>=10.0
+
+# Image processing
+opencv-python>=4.8.0
+numpy>=1.24.0
+pillow>=10.0.0
+
+# Build tools (optional, for creating app bundle)
+nuitka>=2.0
