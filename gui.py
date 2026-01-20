@@ -1,11 +1,55 @@
 """WannaTapThat - Auto-liker with opener for Hinge via iPhone Mirroring."""
 
+import os
+import sys
+import platform
 import tkinter as tk
 from tkinter import ttk, messagebox
 import threading
 import time
 import random
 import subprocess
+
+print("=" * 50)
+print("DEBUG: WannaTapThat launch info")
+print(f"Running from: {sys.executable}")
+print(f"Frozen: {getattr(sys, 'frozen', False)}")
+print(f"CWD: {os.getcwd()}")
+print(f"__file__: {__file__ if '__file__' in dir() else 'N/A'}")
+print("=" * 50)
+
+
+def run_permission_check(find_iphone_window, capture_window):
+    """Debug helper: attempt to find and capture the mirroring window."""
+    try:
+        print("=" * 50)
+        print("DEBUG: Starting permission check")
+
+        window = find_iphone_window()
+        print(f"DEBUG: find_iphone_window returned: {window}")
+
+        if window:
+            print(f"DEBUG: Attempting capture of window {window['id']}")
+            image = capture_window(window['id'])
+            print(f"DEBUG: capture_window returned: {image}")
+            if image:
+                print(f"DEBUG: Image size: {image.size}")
+                debug_path = "/tmp/debug_capture.png"
+                try:
+                    image.save(debug_path)
+                    print(f"DEBUG: Saved to {debug_path}")
+                except Exception as save_exc:
+                    print(f"DEBUG: Failed to save debug capture: {save_exc}")
+            else:
+                print("DEBUG: Capture returned None!")
+        else:
+            print("DEBUG: No window found!")
+    except Exception as debug_exc:
+        print(f"DEBUG: Exception during permission check: {debug_exc}")
+        import traceback
+        traceback.print_exc()
+    finally:
+        print("=" * 50)
 
 
 class WannaTapThatApp:
@@ -249,6 +293,16 @@ class WannaTapThatApp:
 
     def start(self):
         """Start the auto-liker."""
+        try:
+            from clicker import find_iphone_window, capture_window
+        except ImportError as e:
+            messagebox.showerror("Error", f"Failed to import clicker module:\n{e}")
+            self.root.lift()
+            self.root.focus_force()
+            return
+
+        run_permission_check(find_iphone_window, capture_window)
+
         # Validate opener (unless "Like only" is checked)
         if not self.skip_opener_var.get():
             opener = self.opener_text.get('1.0', 'end').strip()
@@ -257,14 +311,6 @@ class WannaTapThatApp:
                 self.root.lift()
                 self.root.focus_force()
                 return
-
-        try:
-            from clicker import find_iphone_window, capture_window
-        except ImportError as e:
-            messagebox.showerror("Error", f"Failed to import clicker module:\n{e}")
-            self.root.lift()
-            self.root.focus_force()
-            return
 
         # Check for iPhone window
         window = find_iphone_window()
@@ -281,7 +327,7 @@ class WannaTapThatApp:
             self.root.focus_force()
             return
 
-        # Try to capture - this will fail if no permission
+        # Try to capture - this will fail if no Screen Recording permission
         try:
             test_capture = capture_window(window['id'])
             if test_capture is None:
@@ -404,7 +450,7 @@ class WannaTapThatApp:
                 if not heart_pos:
                     # No heart - maybe comment box is already open?
                     if not self.skip_opener_var.get():
-                        textbox_recovery = find_icon(image, "textbox.png", threshold=0.45)
+                        textbox_recovery = find_icon(image, "textbox.png", threshold=0.35)
                         if textbox_recovery:
                             print("  No heart but textbox found - recovering...")
                             self.update_status("Typing...")
@@ -466,8 +512,8 @@ class WannaTapThatApp:
                         self.update_status("Send not found")
                         consecutive_failures += 1
                 else:
-                    # Type opener mode
-                    random_delay(0.5, 0.9, should_stop=lambda: not self.running)
+                    # Type opener mode - wait for comment box to fully appear
+                    random_delay(0.8, 1.2, should_stop=lambda: not self.running)
 
                     # 2. Find text input and type opener
                     image = capture_window(window["id"])
@@ -476,8 +522,26 @@ class WannaTapThatApp:
                         consecutive_failures += 1
                         continue
 
-                    textbox_pos = find_icon(image, "textbox.png", threshold=0.45)
-                    print(f"  Textbox search: {textbox_pos}")
+                    # Try to find textbox with retries
+                    textbox_pos = None
+                    for retry in range(3):
+                        textbox_pos = find_icon(image, "textbox.png", threshold=0.35)
+                        print(f"  Textbox search (try {retry+1}): {textbox_pos}")
+                        if textbox_pos:
+                            break
+                        # Wait and recapture
+                        time.sleep(0.5)
+                        image = capture_window(window["id"])
+                        if image is None:
+                            break
+
+                    if not textbox_pos:
+                        # Save debug image
+                        try:
+                            image.save("/tmp/textbox_not_found.png")
+                            print("  DEBUG: Saved /tmp/textbox_not_found.png")
+                        except:
+                            pass
 
                     if textbox_pos:
                         offset_x = random.randint(-3, 3)
@@ -553,6 +617,23 @@ class WannaTapThatApp:
 
 
 def main():
+    if '--version' in sys.argv:
+        print("WannaTapThat diagnostics")
+        print(f"  Version: 0.0.0")
+        print(f"  Python: {platform.python_version()} ({sys.executable})")
+        print(f"  Frozen: {getattr(sys, 'frozen', False)}")
+        print(f"  argv: {sys.argv}")
+        return
+
+    if '--diagnostics' in sys.argv:
+        try:
+            from clicker import find_iphone_window, capture_window
+            run_permission_check(find_iphone_window, capture_window)
+        except Exception as exc:
+            print(f"Diagnostics failed: {exc}")
+            raise SystemExit(1)
+        return
+
     root = tk.Tk()
 
     # Set a nice style

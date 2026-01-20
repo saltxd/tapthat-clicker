@@ -102,30 +102,40 @@ def find_iphone_window():
 
 def capture_window(window_id):
     """Capture a screenshot of the specified window. Returns PIL Image."""
-    cg_image = CGWindowListCreateImage(
-        CGRectNull,
-        kCGWindowListOptionIncludingWindow,
-        window_id,
-        kCGWindowImageBoundsIgnoreFraming,
-    )
+    try:
+        print(f"  capture_window: Attempting CGWindowListCreateImage for window {window_id}")
+        cg_image = CGWindowListCreateImage(
+            CGRectNull,
+            kCGWindowListOptionIncludingWindow,
+            window_id,
+            kCGWindowImageBoundsIgnoreFraming,
+        )
+        print(f"  capture_window: CGWindowListCreateImage returned: {cg_image}")
 
-    if cg_image is None:
+        if not cg_image:
+            print("  capture_window: cg_image is None/falsy!")
+            return None
+
+        width = Quartz.CGImageGetWidth(cg_image)
+        height = Quartz.CGImageGetHeight(cg_image)
+        bytes_per_row = Quartz.CGImageGetBytesPerRow(cg_image)
+        print(f"  capture_window: Image dimensions: {width}x{height}, bytes_per_row={bytes_per_row}")
+
+        pixel_data = Quartz.CGDataProviderCopyData(Quartz.CGImageGetDataProvider(cg_image))
+
+        # Convert to numpy array (BGRA format)
+        arr = np.frombuffer(pixel_data, dtype=np.uint8)
+        arr = arr.reshape((height, bytes_per_row // 4, 4))
+        arr = arr[:, :width, :]  # Trim padding
+
+        # BGRA to RGB
+        rgb = cv2.cvtColor(arr, cv2.COLOR_BGRA2RGB)
+        return Image.fromarray(rgb)
+    except Exception as e:
+        print(f"  capture_window: EXCEPTION: {e}")
+        import traceback
+        traceback.print_exc()
         return None
-
-    width = Quartz.CGImageGetWidth(cg_image)
-    height = Quartz.CGImageGetHeight(cg_image)
-    bytes_per_row = Quartz.CGImageGetBytesPerRow(cg_image)
-
-    pixel_data = Quartz.CGDataProviderCopyData(Quartz.CGImageGetDataProvider(cg_image))
-
-    # Convert to numpy array (BGRA format)
-    arr = np.frombuffer(pixel_data, dtype=np.uint8)
-    arr = arr.reshape((height, bytes_per_row // 4, 4))
-    arr = arr[:, :width, :]  # Trim padding
-
-    # BGRA to RGB
-    rgb = cv2.cvtColor(arr, cv2.COLOR_BGRA2RGB)
-    return Image.fromarray(rgb)
 
 
 def find_icon(image, template_filename, threshold=0.8, topmost=False):
