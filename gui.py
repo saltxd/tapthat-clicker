@@ -9,6 +9,99 @@ import threading
 import time
 import random
 import subprocess
+from datetime import datetime
+
+
+class DebugLogger:
+    """Handles debug logging with timestamped screenshots and log files."""
+
+    def __init__(self, enabled=False):
+        self.enabled = enabled
+        self.session_dir = None
+        self.log_file = None
+        self.step_count = 0
+        self.attempt_count = 0
+
+    def start_session(self):
+        """Create a new debug session directory."""
+        if not self.enabled:
+            return
+
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        self.session_dir = f"/tmp/wtt_debug/session_{timestamp}"
+        os.makedirs(self.session_dir, exist_ok=True)
+
+        self.log_file = open(f"{self.session_dir}/debug.log", "w")
+        self.step_count = 0
+        self.attempt_count = 0
+        self.log(f"Debug session started: {timestamp}")
+        self.log(f"Session directory: {self.session_dir}")
+
+    def end_session(self):
+        """Close the debug session."""
+        if self.log_file:
+            self.log("Session ended")
+            self.log_file.close()
+            self.log_file = None
+
+    def new_attempt(self):
+        """Start a new like attempt."""
+        self.attempt_count += 1
+        self.step_count = 0
+        self.log(f"\n{'='*50}")
+        self.log(f"ATTEMPT {self.attempt_count}")
+        self.log(f"{'='*50}")
+
+    def log(self, message):
+        """Log a message with timestamp."""
+        timestamp = datetime.now().strftime("%H:%M:%S.%f")[:-3]
+        line = f"[{timestamp}] {message}"
+        print(line)
+        if self.log_file:
+            self.log_file.write(line + "\n")
+            self.log_file.flush()
+
+    def save_screenshot(self, image, step_name):
+        """Save a screenshot with descriptive name."""
+        if not self.enabled or not self.session_dir or image is None:
+            return None
+
+        self.step_count += 1
+        filename = f"attempt{self.attempt_count:03d}_step{self.step_count:02d}_{step_name}.png"
+        filepath = os.path.join(self.session_dir, filename)
+        try:
+            image.save(filepath)
+            self.log(f"Screenshot saved: {filename}")
+            return filepath
+        except Exception as e:
+            self.log(f"Failed to save screenshot: {e}")
+            return None
+
+    def log_match_result(self, template_name, result, threshold, best_match=None):
+        """Log template matching result with confidence.
+
+        Args:
+            template_name: Name of the template being matched
+            result: Match result (x, y, confidence) or None
+            threshold: The threshold used
+            best_match: Optional (x, y, confidence) of best match even if below threshold
+        """
+        if result:
+            x, y, confidence = result
+            status = "FOUND" if confidence >= threshold else "BELOW_THRESHOLD"
+            self.log(f"  {template_name}: {status} at ({x}, {y}) "
+                     f"confidence={confidence:.3f} threshold={threshold}")
+        else:
+            if best_match:
+                x, y, confidence = best_match
+                self.log(f"  {template_name}: NOT_FOUND (best={confidence:.3f}, "
+                         f"threshold={threshold}, at ({x}, {y}))")
+            else:
+                self.log(f"  {template_name}: NOT_FOUND (threshold={threshold})")
+
+
+# Global debug logger instance
+debug_logger = DebugLogger(enabled=False)
 
 print("=" * 50)
 print("DEBUG: WannaTapThat launch info")
@@ -124,6 +217,14 @@ class WannaTapThatApp:
             self.root,
             text="Like only (skip opener)",
             variable=self.skip_opener_var
+        ).pack(anchor='w', padx=20, pady=(0, 0))
+
+        # Debug mode checkbox
+        self.debug_mode_var = tk.BooleanVar(value=False)
+        ttk.Checkbutton(
+            self.root,
+            text="Debug mode (save screenshots to /tmp/wtt_debug/)",
+            variable=self.debug_mode_var
         ).pack(anchor='w', padx=20, pady=(0, 5))
 
         # Separator
@@ -367,6 +468,8 @@ class WannaTapThatApp:
 
     def run_liker(self):
         """Main liker loop - runs in background thread."""
+        global debug_logger
+
         from clicker import (
             find_iphone_window,
             capture_window,
@@ -379,16 +482,18 @@ class WannaTapThatApp:
         )
         import os
 
+        # Set up debug logging
+        debug_logger.enabled = self.debug_mode_var.get()
+        debug_logger.start_session()
+
         # Debug: log resource paths
-        print("=" * 50)
-        print("WannaTapThat Debug Info")
-        print("=" * 50)
+        debug_logger.log("WannaTapThat Debug Info")
+        debug_logger.log("=" * 50)
         for template in ['heart.png', 'textbox.png', 'send.png']:
             path = get_resource_path(template)
             exists = os.path.exists(path)
-            print(f"  {template}: {path}")
-            print(f"    -> {'EXISTS' if exists else 'MISSING'}")
-        print("=" * 50)
+            debug_logger.log(f"  {template}: {path} -> {'EXISTS' if exists else 'MISSING'}")
+        debug_logger.log("=" * 50)
 
         max_likes = self.get_max_likes()
         sent = 0
@@ -396,6 +501,7 @@ class WannaTapThatApp:
         capture_failures = 0
         max_failures = 5
         dot_cycle = 0
+        typed_on_current_profile = False  # Track if we've already typed opener
 
         while self.running:
             # Check if we've hit the limit
@@ -420,60 +526,110 @@ class WannaTapThatApp:
             dot_cycle += 1
 
             try:
-                print(f"\n[Attempt {sent+1}] Starting...")
+                debug_logger.new_attempt()
+                debug_logger.log(f"Starting attempt (sent so far: {sent})")
 
                 window = find_iphone_window()
                 if not window:
-                    print("  FAIL: No iPhone window found")
+                    debug_logger.log("FAIL: No iPhone window found")
                     self.update_status("Lost iPhone Mirroring window!")
                     consecutive_failures += 1
                     time.sleep(1)
                     continue
 
-                print(f"  Window found: {window['owner']}")
+                debug_logger.log(f"Window found: {window['owner']} (id={window['id']})")
 
                 image = capture_window(window["id"])
                 if image is None:
-                    print("  FAIL: Could not capture window (permission issue?)")
+                    debug_logger.log("FAIL: Could not capture window (permission issue?)")
                     self.update_status("Capture failed")
                     consecutive_failures += 1
                     capture_failures += 1
                     time.sleep(0.5)
                     continue
 
-                print(f"  Captured: {image.size}")
+                debug_logger.log(f"Captured window: {image.size}")
+                debug_logger.save_screenshot(image, "01_initial_capture")
 
-                # 1. Find and click topmost heart
-                heart_pos = find_icon(image, "heart.png", threshold=0.65, topmost=True)
-                print(f"  Heart search: {heart_pos}")
+                # 1. Find and click topmost heart (with retry)
+                debug_logger.log("Searching for heart...")
+                heart_threshold = 0.60  # Lowered from 0.65 for better detection
+                heart_pos = None
+                for heart_retry in range(3):
+                    heart_pos = find_icon(image, "heart.png", threshold=heart_threshold, topmost=True)
+                    if heart_pos:
+                        debug_logger.log_match_result(f"heart.png (try {heart_retry+1})", heart_pos, heart_threshold)
+                        break
+                    best_heart = find_icon(image, "heart.png", threshold=heart_threshold, topmost=True, return_best_match=True)
+                    debug_logger.log_match_result(f"heart.png (try {heart_retry+1})", heart_pos, heart_threshold, best_match=best_heart)
+                    if heart_retry < 2:
+                        debug_logger.log(f"Heart retry {heart_retry+1} - recapturing...")
+                        time.sleep(0.3)
+                        image = capture_window(window["id"])
+                        if image is None:
+                            debug_logger.log("Capture failed during heart retry")
+                            break
 
                 if not heart_pos:
+                    debug_logger.save_screenshot(image, "02_heart_not_found")
                     # No heart - maybe comment box is already open?
                     if not self.skip_opener_var.get():
+                        # Check if send button is visible (we already typed)
+                        send_recovery = find_icon(image, "send.png", threshold=0.65)
+                        if send_recovery and typed_on_current_profile:
+                            debug_logger.log("No heart but send found - clicking send (already typed)")
+                            click_at(send_recovery[0], send_recovery[1], window)
+                            sent += 1
+                            consecutive_failures = 0
+                            typed_on_current_profile = False  # Reset for next profile
+                            debug_logger.log(f"SUCCESS (send recovery)! Total: {sent}")
+                            self.update_status("Waiting...")
+                            continue
+
                         textbox_recovery = find_icon(image, "textbox.png", threshold=0.35)
-                        if textbox_recovery:
-                            print("  No heart but textbox found - recovering...")
+                        debug_logger.log_match_result("textbox.png (recovery)", textbox_recovery, 0.35)
+                        if textbox_recovery and not typed_on_current_profile:
+                            debug_logger.log("No heart but textbox found - attempting recovery")
                             self.update_status("Typing...")
                             click_at(textbox_recovery[0], textbox_recovery[1], window)
                             random_delay(0.3, 0.5, should_stop=lambda: not self.running)
 
                             opener = self.get_opener()
+                            debug_logger.log(f"Typing opener: {opener[:50]}...")
                             typing_completed = human_type(opener, should_stop=lambda: not self.running)
                             if not typing_completed:
+                                debug_logger.log("Typing interrupted by stop")
                                 break
+                            typed_on_current_profile = True  # Mark that we've typed
                             random_delay(0.3, 0.5, should_stop=lambda: not self.running)
 
+                            image = capture_window(window["id"])
+                            debug_logger.save_screenshot(image, "recovery_after_typing")
+                            send_pos = find_icon(image, "send.png", threshold=0.65)
+                            debug_logger.log_match_result("send.png (recovery)", send_pos, 0.65)
+                            if send_pos:
+                                click_at(send_pos[0], send_pos[1], window)
+                                sent += 1
+                                consecutive_failures = 0
+                                typed_on_current_profile = False  # Reset for next profile
+                                debug_logger.log(f"SUCCESS (recovered)! Total: {sent}")
+                                self.update_status("Waiting...")
+                                continue
+                        elif textbox_recovery and typed_on_current_profile:
+                            debug_logger.log("Textbox found but already typed - skipping re-type, looking for send")
+                            # Already typed, just need to find send
                             image = capture_window(window["id"])
                             send_pos = find_icon(image, "send.png", threshold=0.65)
                             if send_pos:
                                 click_at(send_pos[0], send_pos[1], window)
                                 sent += 1
                                 consecutive_failures = 0
-                                print(f"  SUCCESS (recovered)! Total: {sent}")
+                                typed_on_current_profile = False
+                                debug_logger.log(f"SUCCESS (skipped re-type)! Total: {sent}")
                                 self.update_status("Waiting...")
                                 continue
 
-                    print("  FAIL: Heart not found")
+                    debug_logger.log("FAIL: Heart not found, no recovery possible")
                     self.update_status("No heart found")
                     consecutive_failures += 1
                     time.sleep(1)
@@ -482,21 +638,24 @@ class WannaTapThatApp:
                 offset_x = random.randint(-5, 5)
                 offset_y = random.randint(-5, 5)
                 click_at(heart_pos[0] + offset_x, heart_pos[1] + offset_y, window)
-                print(f"  Clicked heart at ({heart_pos[0]}, {heart_pos[1]})")
+                debug_logger.log(f"Clicked heart at ({heart_pos[0]}, {heart_pos[1]})")
 
                 # If "Like only" mode, skip typing but still click send
                 if self.skip_opener_var.get():
+                    debug_logger.log("Like-only mode - skipping opener")
                     random_delay(0.5, 0.9, should_stop=lambda: not self.running)
 
                     # Capture screen to find send button
                     image = capture_window(window["id"])
                     if image is None:
-                        print("  FAIL: Could not capture after heart click")
+                        debug_logger.log("FAIL: Could not capture after heart click")
                         consecutive_failures += 1
                         continue
 
+                    debug_logger.save_screenshot(image, "03_after_heart_click_likeonly")
                     send_pos = find_icon(image, "send.png", threshold=0.65)
-                    print(f"  Send search (like only): {send_pos}")
+                    best_send = find_icon(image, "send.png", threshold=0.65, return_best_match=True) if not send_pos else None
+                    debug_logger.log_match_result("send.png (like only)", send_pos, 0.65, best_match=best_send)
 
                     if send_pos:
                         random_delay(0.2, 0.4, should_stop=lambda: not self.running)
@@ -505,69 +664,77 @@ class WannaTapThatApp:
                         click_at(send_pos[0] + offset_x, send_pos[1] + offset_y, window)
                         sent += 1
                         consecutive_failures = 0
-                        print(f"  SUCCESS (like only)! Total sent: {sent}")
+                        typed_on_current_profile = False  # Reset for next profile
+                        debug_logger.log(f"SUCCESS (like only)! Total sent: {sent}")
                         self.update_status("Waiting...")
                     else:
-                        print("  FAIL: Send button not found (like only)")
+                        debug_logger.log("FAIL: Send button not found (like only)")
+                        debug_logger.save_screenshot(image, "04_send_not_found_likeonly")
                         self.update_status("Send not found")
                         consecutive_failures += 1
                 else:
                     # Type opener mode - wait for comment box to fully appear
+                    debug_logger.log("Opener mode - waiting for comment box")
                     random_delay(0.8, 1.2, should_stop=lambda: not self.running)
 
                     # 2. Find text input and type opener
                     image = capture_window(window["id"])
                     if image is None:
-                        print("  FAIL: Could not capture after heart click")
+                        debug_logger.log("FAIL: Could not capture after heart click")
                         consecutive_failures += 1
                         continue
+
+                    debug_logger.save_screenshot(image, "03_after_heart_click")
 
                     # Try to find textbox with retries
                     textbox_pos = None
                     for retry in range(3):
                         textbox_pos = find_icon(image, "textbox.png", threshold=0.35)
-                        print(f"  Textbox search (try {retry+1}): {textbox_pos}")
+                        debug_logger.log_match_result(f"textbox.png (try {retry+1})", textbox_pos, 0.35)
                         if textbox_pos:
                             break
                         # Wait and recapture
+                        debug_logger.log(f"Textbox retry {retry+1} - recapturing...")
                         time.sleep(0.5)
                         image = capture_window(window["id"])
                         if image is None:
+                            debug_logger.log("FAIL: Capture failed during textbox retry")
                             break
+                        debug_logger.save_screenshot(image, f"03b_textbox_retry_{retry+1}")
 
                     if not textbox_pos:
-                        # Save debug image
-                        try:
-                            image.save("/tmp/textbox_not_found.png")
-                            print("  DEBUG: Saved /tmp/textbox_not_found.png")
-                        except:
-                            pass
+                        debug_logger.log("FAIL: Textbox not found after all retries")
+                        debug_logger.save_screenshot(image, "04_textbox_not_found")
 
                     if textbox_pos:
                         offset_x = random.randint(-3, 3)
                         offset_y = random.randint(-3, 3)
                         click_at(textbox_pos[0] + offset_x, textbox_pos[1] + offset_y, window)
-                        print(f"  Clicked textbox at ({textbox_pos[0]}, {textbox_pos[1]})")
+                        debug_logger.log(f"Clicked textbox at ({textbox_pos[0]}, {textbox_pos[1]})")
                         random_delay(0.3, 0.6, should_stop=lambda: not self.running)
 
                         opener = self.get_opener()
+                        debug_logger.log(f"Typing opener: {opener[:50]}...")
                         self.update_status("Typing...")
                         typing_completed = human_type(opener, should_stop=lambda: not self.running)
                         if not typing_completed:
-                            print("  Typing interrupted by stop")
+                            debug_logger.log("Typing interrupted by stop")
                             break
-                        print(f"  Typed: {opener[:30]}...")
+                        typed_on_current_profile = True  # Mark that we've typed
+                        debug_logger.log("Typing completed")
                         random_delay(0.3, 0.7, should_stop=lambda: not self.running)
 
                         # 3. Find and click send
                         image = capture_window(window["id"])
                         if image is None:
-                            print("  FAIL: Could not capture after typing")
+                            debug_logger.log("FAIL: Could not capture after typing")
                             consecutive_failures += 1
                             continue
 
+                        debug_logger.save_screenshot(image, "05_after_typing")
                         send_pos = find_icon(image, "send.png", threshold=0.65)
-                        print(f"  Send search: {send_pos}")
+                        best_send = find_icon(image, "send.png", threshold=0.65, return_best_match=True) if not send_pos else None
+                        debug_logger.log_match_result("send.png", send_pos, 0.65, best_match=best_send)
 
                         if send_pos:
                             random_delay(0.2, 0.5, should_stop=lambda: not self.running)
@@ -576,14 +743,17 @@ class WannaTapThatApp:
                             click_at(send_pos[0] + offset_x, send_pos[1] + offset_y, window)
                             sent += 1
                             consecutive_failures = 0
-                            print(f"  SUCCESS! Total sent: {sent}")
+                            typed_on_current_profile = False  # Reset for next profile
+                            debug_logger.log(f"SUCCESS! Total sent: {sent}")
                             self.update_status("Waiting...")
                         else:
-                            print("  FAIL: Send button not found")
-                            self.update_status("Send failed")
+                            debug_logger.log("FAIL: Send button not found (will retry)")
+                            debug_logger.save_screenshot(image, "06_send_not_found")
+                            self.update_status("Send failed - retrying...")
+                            # Don't increment consecutive_failures heavily - we might find it next loop
                             consecutive_failures += 1
                     else:
-                        print("  FAIL: Textbox not found")
+                        debug_logger.log("FAIL: Textbox not found - cannot type opener")
                         self.update_status("No textbox")
                         consecutive_failures += 1
 
@@ -595,13 +765,21 @@ class WannaTapThatApp:
                     time.sleep(0.1)
 
             except FileNotFoundError as e:
+                debug_logger.log(f"ERROR: Missing template: {e}")
                 self.update_status(f"Missing template: {e}")
                 consecutive_failures += 1
                 time.sleep(2)
             except Exception as e:
+                debug_logger.log(f"ERROR: Exception: {e}")
+                import traceback
+                debug_logger.log(traceback.format_exc())
                 self.update_status(f"Error: {str(e)[:50]}")
                 consecutive_failures += 1
                 time.sleep(1)
+
+        # End debug session
+        debug_logger.log(f"Session complete. Total sent: {sent}")
+        debug_logger.end_session()
 
         # Done - update UI from main thread
         def finish():

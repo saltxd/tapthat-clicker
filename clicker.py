@@ -138,12 +138,13 @@ def capture_window(window_id):
         return None
 
 
-def find_icon(image, template_filename, threshold=0.8, topmost=False):
+def find_icon(image, template_filename, threshold=0.8, topmost=False, return_best_match=False):
     """
     Find the icon in the image using template matching.
     Returns (x, y, confidence) center point in image coordinates, or None if not found.
 
     If topmost=True, returns the highest match on screen (smallest Y) when multiple found.
+    If return_best_match=True, returns the best match even if below threshold (for debugging).
     """
     template_path = get_resource_path(template_filename)
 
@@ -163,12 +164,20 @@ def find_icon(image, template_filename, threshold=0.8, topmost=False):
     img_gray = cv2.cvtColor(img_bgr, cv2.COLOR_BGR2GRAY)
     result = cv2.matchTemplate(img_gray, template_gray, cv2.TM_CCOEFF_NORMED)
 
+    # Always get the best match for logging
+    _, max_val, _, max_loc = cv2.minMaxLoc(result)
+
     if topmost:
         # Find ALL matches above threshold
         locations = np.where(result >= threshold)
         matches = list(zip(locations[1], locations[0]))  # (x, y)
 
         if not matches:
+            # No matches above threshold - return best match info if requested
+            if return_best_match:
+                cx = max_loc[0] + w // 2
+                cy = max_loc[1] + h // 2
+                return (cx, cy, float(max_val))
             return None
 
         # Return topmost (smallest Y)
@@ -177,11 +186,17 @@ def find_icon(image, template_filename, threshold=0.8, topmost=False):
         return (best[0] + w // 2, best[1] + h // 2, float(confidence))
     else:
         # Original behavior - best match
-        _, max_val, _, max_loc = cv2.minMaxLoc(result)
         if max_val >= threshold:
             cx = max_loc[0] + w // 2
             cy = max_loc[1] + h // 2
-            return (cx, cy, max_val)
+            return (cx, cy, float(max_val))
+
+        # Return best match info if requested (even if below threshold)
+        if return_best_match:
+            cx = max_loc[0] + w // 2
+            cy = max_loc[1] + h // 2
+            return (cx, cy, float(max_val))
+
         return None
 
 
