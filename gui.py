@@ -553,15 +553,24 @@ class WannaTapThatApp:
 
                 # 1. Find and click topmost heart (with retry)
                 debug_logger.log("Searching for heart...")
-                heart_threshold = 0.60  # Lowered from 0.65 for better detection
+                heart_threshold = 0.65  # Back to 0.65 - 0.60 caused false positives
+                send_threshold = 0.60   # Lowered from 0.65 - was getting 0.645 misses
+                # Heart button is always on the RIGHT side of screen (x > 400 in image coords)
+                min_heart_x = 400
                 heart_pos = None
                 for heart_retry in range(3):
-                    heart_pos = find_icon(image, "heart.png", threshold=heart_threshold, topmost=True)
-                    if heart_pos:
-                        debug_logger.log_match_result(f"heart.png (try {heart_retry+1})", heart_pos, heart_threshold)
-                        break
-                    best_heart = find_icon(image, "heart.png", threshold=heart_threshold, topmost=True, return_best_match=True)
-                    debug_logger.log_match_result(f"heart.png (try {heart_retry+1})", heart_pos, heart_threshold, best_match=best_heart)
+                    candidate = find_icon(image, "heart.png", threshold=heart_threshold, topmost=True)
+                    if candidate:
+                        # Validate heart is on right side of screen
+                        if candidate[0] >= min_heart_x:
+                            heart_pos = candidate
+                            debug_logger.log_match_result(f"heart.png (try {heart_retry+1})", heart_pos, heart_threshold)
+                            break
+                        else:
+                            debug_logger.log(f"  heart.png (try {heart_retry+1}): REJECTED - x={candidate[0]} < {min_heart_x} (left side false positive)")
+                    else:
+                        best_heart = find_icon(image, "heart.png", threshold=heart_threshold, topmost=True, return_best_match=True)
+                        debug_logger.log_match_result(f"heart.png (try {heart_retry+1})", None, heart_threshold, best_match=best_heart)
                     if heart_retry < 2:
                         debug_logger.log(f"Heart retry {heart_retry+1} - recapturing...")
                         time.sleep(0.3)
@@ -575,7 +584,7 @@ class WannaTapThatApp:
                     # No heart - maybe comment box is already open?
                     if not self.skip_opener_var.get():
                         # Check if send button is visible (we already typed)
-                        send_recovery = find_icon(image, "send.png", threshold=0.65)
+                        send_recovery = find_icon(image, "send.png", threshold=0.60)
                         if send_recovery and typed_on_current_profile:
                             debug_logger.log("No heart but send found - clicking send (already typed)")
                             click_at(send_recovery[0], send_recovery[1], window)
@@ -605,7 +614,7 @@ class WannaTapThatApp:
 
                             image = capture_window(window["id"])
                             debug_logger.save_screenshot(image, "recovery_after_typing")
-                            send_pos = find_icon(image, "send.png", threshold=0.65)
+                            send_pos = find_icon(image, "send.png", threshold=0.60)
                             debug_logger.log_match_result("send.png (recovery)", send_pos, 0.65)
                             if send_pos:
                                 click_at(send_pos[0], send_pos[1], window)
@@ -619,7 +628,7 @@ class WannaTapThatApp:
                             debug_logger.log("Textbox found but already typed - skipping re-type, looking for send")
                             # Already typed, just need to find send
                             image = capture_window(window["id"])
-                            send_pos = find_icon(image, "send.png", threshold=0.65)
+                            send_pos = find_icon(image, "send.png", threshold=0.60)
                             if send_pos:
                                 click_at(send_pos[0], send_pos[1], window)
                                 sent += 1
@@ -653,8 +662,8 @@ class WannaTapThatApp:
                         continue
 
                     debug_logger.save_screenshot(image, "03_after_heart_click_likeonly")
-                    send_pos = find_icon(image, "send.png", threshold=0.65)
-                    best_send = find_icon(image, "send.png", threshold=0.65, return_best_match=True) if not send_pos else None
+                    send_pos = find_icon(image, "send.png", threshold=0.60)
+                    best_send = find_icon(image, "send.png", threshold=0.60, return_best_match=True) if not send_pos else None
                     debug_logger.log_match_result("send.png (like only)", send_pos, 0.65, best_match=best_send)
 
                     if send_pos:
@@ -732,8 +741,8 @@ class WannaTapThatApp:
                             continue
 
                         debug_logger.save_screenshot(image, "05_after_typing")
-                        send_pos = find_icon(image, "send.png", threshold=0.65)
-                        best_send = find_icon(image, "send.png", threshold=0.65, return_best_match=True) if not send_pos else None
+                        send_pos = find_icon(image, "send.png", threshold=0.60)
+                        best_send = find_icon(image, "send.png", threshold=0.60, return_best_match=True) if not send_pos else None
                         debug_logger.log_match_result("send.png", send_pos, 0.65, best_match=best_send)
 
                         if send_pos:
