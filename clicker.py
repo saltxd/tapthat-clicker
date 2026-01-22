@@ -138,13 +138,14 @@ def capture_window(window_id):
         return None
 
 
-def find_icon(image, template_filename, threshold=0.8, topmost=False, return_best_match=False):
+def find_icon(image, template_filename, threshold=0.8, topmost=False, return_best_match=False, min_x=0, min_y=0):
     """
     Find the icon in the image using template matching.
     Returns (x, y, confidence) center point in image coordinates, or None if not found.
 
     If topmost=True, returns the highest match on screen (smallest Y) when multiple found.
     If return_best_match=True, returns the best match even if below threshold (for debugging).
+    min_x, min_y: Only consider matches where center x >= min_x and y >= min_y.
     """
     template_path = get_resource_path(template_filename)
 
@@ -171,6 +172,11 @@ def find_icon(image, template_filename, threshold=0.8, topmost=False, return_bes
         # Find ALL matches above threshold
         locations = np.where(result >= threshold)
         matches = list(zip(locations[1], locations[0]))  # (x, y)
+
+        # Filter by region constraints (using center point)
+        if min_x > 0 or min_y > 0:
+            matches = [(x, y) for x, y in matches
+                       if (x + w // 2) >= min_x and (y + h // 2) >= min_y]
 
         if not matches:
             # No matches above threshold - return best match info if requested

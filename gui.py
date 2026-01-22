@@ -555,20 +555,22 @@ class WannaTapThatApp:
                 debug_logger.log("Searching for heart...")
                 heart_threshold = 0.65  # Back to 0.65 - 0.60 caused false positives
                 send_threshold = 0.60   # Lowered from 0.65 - was getting 0.645 misses
-                # Heart button is always on the RIGHT side of screen (x > 400 in image coords)
-                min_heart_x = 400
+                # Heart button is always on the RIGHT side and LOWER portion of screen
+                # This prevents false positives from top dropdowns (Dating Intentions, etc.)
+                # and left-side UI elements. Pass constraints directly to find_icon.
+                min_heart_x = 400   # Right side only (image coords)
+                min_heart_y = 400   # Lower portion only - avoids top dropdowns/filters
                 heart_pos = None
                 for heart_retry in range(3):
-                    candidate = find_icon(image, "heart.png", threshold=heart_threshold, topmost=True)
+                    # Pass min_x/min_y to filter at search level, not after
+                    candidate = find_icon(image, "heart.png", threshold=heart_threshold, topmost=True,
+                                         min_x=min_heart_x, min_y=min_heart_y)
                     if candidate:
-                        # Validate heart is on right side of screen
-                        if candidate[0] >= min_heart_x:
-                            heart_pos = candidate
-                            debug_logger.log_match_result(f"heart.png (try {heart_retry+1})", heart_pos, heart_threshold)
-                            break
-                        else:
-                            debug_logger.log(f"  heart.png (try {heart_retry+1}): REJECTED - x={candidate[0]} < {min_heart_x} (left side false positive)")
+                        heart_pos = candidate
+                        debug_logger.log_match_result(f"heart.png (try {heart_retry+1})", heart_pos, heart_threshold)
+                        break
                     else:
+                        # Get best match anywhere for debugging
                         best_heart = find_icon(image, "heart.png", threshold=heart_threshold, topmost=True, return_best_match=True)
                         debug_logger.log_match_result(f"heart.png (try {heart_retry+1})", None, heart_threshold, best_match=best_heart)
                     if heart_retry < 2:
@@ -579,13 +581,16 @@ class WannaTapThatApp:
                             debug_logger.log("Capture failed during heart retry")
                             break
 
+                # Send button must be in lower portion of screen (not top dropdowns)
+                min_send_y = 800
+
                 if not heart_pos:
                     debug_logger.save_screenshot(image, "02_heart_not_found")
                     # No heart - maybe comment box is already open?
                     if not self.skip_opener_var.get():
                         # Check if send button is visible (we already typed)
                         send_recovery = find_icon(image, "send.png", threshold=0.60)
-                        if send_recovery and typed_on_current_profile:
+                        if send_recovery and send_recovery[1] >= min_send_y and typed_on_current_profile:
                             debug_logger.log("No heart but send found - clicking send (already typed)")
                             click_at(send_recovery[0], send_recovery[1], window)
                             sent += 1
@@ -594,6 +599,8 @@ class WannaTapThatApp:
                             debug_logger.log(f"SUCCESS (send recovery)! Total: {sent}")
                             self.update_status("Waiting...")
                             continue
+                        elif send_recovery and send_recovery[1] < min_send_y:
+                            debug_logger.log(f"  send.png (recovery): REJECTED - y={send_recovery[1]} < {min_send_y} (top area false positive)")
 
                         textbox_recovery = find_icon(image, "textbox.png", threshold=0.35)
                         debug_logger.log_match_result("textbox.png (recovery)", textbox_recovery, 0.35)
@@ -615,8 +622,8 @@ class WannaTapThatApp:
                             image = capture_window(window["id"])
                             debug_logger.save_screenshot(image, "recovery_after_typing")
                             send_pos = find_icon(image, "send.png", threshold=0.60)
-                            debug_logger.log_match_result("send.png (recovery)", send_pos, 0.65)
-                            if send_pos:
+                            debug_logger.log_match_result("send.png (recovery)", send_pos, 0.60)
+                            if send_pos and send_pos[1] >= min_send_y:
                                 click_at(send_pos[0], send_pos[1], window)
                                 sent += 1
                                 consecutive_failures = 0
@@ -624,12 +631,14 @@ class WannaTapThatApp:
                                 debug_logger.log(f"SUCCESS (recovered)! Total: {sent}")
                                 self.update_status("Waiting...")
                                 continue
+                            elif send_pos and send_pos[1] < min_send_y:
+                                debug_logger.log(f"  send.png: REJECTED - y={send_pos[1]} < {min_send_y} (top area false positive)")
                         elif textbox_recovery and typed_on_current_profile:
                             debug_logger.log("Textbox found but already typed - skipping re-type, looking for send")
                             # Already typed, just need to find send
                             image = capture_window(window["id"])
                             send_pos = find_icon(image, "send.png", threshold=0.60)
-                            if send_pos:
+                            if send_pos and send_pos[1] >= min_send_y:
                                 click_at(send_pos[0], send_pos[1], window)
                                 sent += 1
                                 consecutive_failures = 0
@@ -637,6 +646,8 @@ class WannaTapThatApp:
                                 debug_logger.log(f"SUCCESS (skipped re-type)! Total: {sent}")
                                 self.update_status("Waiting...")
                                 continue
+                            elif send_pos and send_pos[1] < min_send_y:
+                                debug_logger.log(f"  send.png: REJECTED - y={send_pos[1]} < {min_send_y} (top area false positive)")
 
                     debug_logger.log("FAIL: Heart not found, no recovery possible")
                     self.update_status("No heart found")
@@ -664,9 +675,9 @@ class WannaTapThatApp:
                     debug_logger.save_screenshot(image, "03_after_heart_click_likeonly")
                     send_pos = find_icon(image, "send.png", threshold=0.60)
                     best_send = find_icon(image, "send.png", threshold=0.60, return_best_match=True) if not send_pos else None
-                    debug_logger.log_match_result("send.png (like only)", send_pos, 0.65, best_match=best_send)
+                    debug_logger.log_match_result("send.png (like only)", send_pos, 0.60, best_match=best_send)
 
-                    if send_pos:
+                    if send_pos and send_pos[1] >= min_send_y:
                         random_delay(0.2, 0.4, should_stop=lambda: not self.running)
                         offset_x = random.randint(-3, 3)
                         offset_y = random.randint(-3, 3)
@@ -676,6 +687,11 @@ class WannaTapThatApp:
                         typed_on_current_profile = False  # Reset for next profile
                         debug_logger.log(f"SUCCESS (like only)! Total sent: {sent}")
                         self.update_status("Waiting...")
+                    elif send_pos and send_pos[1] < min_send_y:
+                        debug_logger.log(f"  send.png (like only): REJECTED - y={send_pos[1]} < {min_send_y} (top area false positive)")
+                        debug_logger.save_screenshot(image, "04_send_rejected_likeonly")
+                        self.update_status("Send in wrong area")
+                        consecutive_failures += 1
                     else:
                         debug_logger.log("FAIL: Send button not found (like only)")
                         debug_logger.save_screenshot(image, "04_send_not_found_likeonly")
@@ -743,9 +759,9 @@ class WannaTapThatApp:
                         debug_logger.save_screenshot(image, "05_after_typing")
                         send_pos = find_icon(image, "send.png", threshold=0.60)
                         best_send = find_icon(image, "send.png", threshold=0.60, return_best_match=True) if not send_pos else None
-                        debug_logger.log_match_result("send.png", send_pos, 0.65, best_match=best_send)
+                        debug_logger.log_match_result("send.png", send_pos, 0.60, best_match=best_send)
 
-                        if send_pos:
+                        if send_pos and send_pos[1] >= min_send_y:
                             random_delay(0.2, 0.5, should_stop=lambda: not self.running)
                             offset_x = random.randint(-3, 3)
                             offset_y = random.randint(-3, 3)
@@ -755,6 +771,11 @@ class WannaTapThatApp:
                             typed_on_current_profile = False  # Reset for next profile
                             debug_logger.log(f"SUCCESS! Total sent: {sent}")
                             self.update_status("Waiting...")
+                        elif send_pos and send_pos[1] < min_send_y:
+                            debug_logger.log(f"  send.png: REJECTED - y={send_pos[1]} < {min_send_y} (top area false positive)")
+                            debug_logger.save_screenshot(image, "06_send_rejected")
+                            self.update_status("Send in wrong area")
+                            consecutive_failures += 1
                         else:
                             debug_logger.log("FAIL: Send button not found (will retry)")
                             debug_logger.save_screenshot(image, "06_send_not_found")

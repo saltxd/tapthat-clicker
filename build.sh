@@ -44,7 +44,6 @@ python -m nuitka \
     --onefile \
     --macos-create-app-bundle \
     --macos-app-name="WannaTapThat" \
-    --macos-app-icon=resources/icon.icns 2>/dev/null || true \
     --include-data-dir=resources=resources \
     --output-dir=dist \
     --remove-output \
