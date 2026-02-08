@@ -160,50 +160,72 @@ def find_icon(image, template_filename, threshold=0.8, topmost=False, return_bes
 
     h, w = template.shape[:2]
 
-    # Use grayscale matching (most reliable)
-    template_gray = cv2.cvtColor(template, cv2.COLOR_BGR2GRAY)
+    # Crop template by 15% margins to remove background-dependent edges.
+    # Icons like heart.png have dark corners from the app background that
+    # cause matching failures on bright profile photos. Cropping isolates
+    # just the icon content for robust matching across all backgrounds.
+    margin_x = int(w * 0.15)
+    margin_y = int(h * 0.15)
+    template_cropped = template[margin_y:h - margin_y, margin_x:w - margin_x]
+    ch, cw = template_cropped.shape[:2]
+
+    template_gray = cv2.cvtColor(template_cropped, cv2.COLOR_BGR2GRAY)
     img_gray = cv2.cvtColor(img_bgr, cv2.COLOR_BGR2GRAY)
     result = cv2.matchTemplate(img_gray, template_gray, cv2.TM_CCOEFF_NORMED)
 
     # Always get the best match for logging
     _, max_val, _, max_loc = cv2.minMaxLoc(result)
 
-    if topmost:
-        # Find ALL matches above threshold
-        locations = np.where(result >= threshold)
-        matches = list(zip(locations[1], locations[0]))  # (x, y)
-
-        # Filter by region constraints (using center point)
-        if min_x > 0 or min_y > 0:
-            matches = [(x, y) for x, y in matches
-                       if (x + w // 2) >= min_x and (y + h // 2) >= min_y]
-
-        if not matches:
-            # No matches above threshold - return best match info if requested
-            if return_best_match:
-                cx = max_loc[0] + w // 2
-                cy = max_loc[1] + h // 2
-                return (cx, cy, float(max_val))
+    def _find_in_result(res, thresh):
+        """Search a result matrix for matches, handling topmost/region logic."""
+        if topmost:
+            locations = np.where(res >= thresh)
+            matches = list(zip(locations[1], locations[0]))
+            if min_x > 0 or min_y > 0:
+                matches = [(x, y) for x, y in matches
+                           if (x + cw // 2 + margin_x) >= min_x and (y + ch // 2 + margin_y) >= min_y]
+            if not matches:
+                return None
+            best = min(matches, key=lambda p: p[1])
+            # Refine to peak confidence within 5px neighborhood.
+            # The topmost pixel is at the edge of the match cluster and has
+            # lower confidence; the true peak is typically 1-2px away.
+            ny_lo = max(0, best[1] - 5)
+            ny_hi = min(res.shape[0], best[1] + 6)
+            nx_lo = max(0, best[0] - 5)
+            nx_hi = min(res.shape[1], best[0] + 6)
+            neighborhood = res[ny_lo:ny_hi, nx_lo:nx_hi]
+            peak_loc = np.unravel_index(np.argmax(neighborhood), neighborhood.shape)
+            peak_x = nx_lo + peak_loc[1]
+            peak_y = ny_lo + peak_loc[0]
+            peak_conf = float(res[peak_y, peak_x])
+            return (peak_x + cw // 2 + margin_x, peak_y + ch // 2 + margin_y, peak_conf)
+        else:
+            if min_x > 0 or min_y > 0:
+                # Mask out invalid region before finding max
+                rows, cols = res.shape
+                x_coords = np.arange(cols) + cw // 2 + margin_x
+                y_coords = np.arange(rows) + ch // 2 + margin_y
+                valid = np.outer(y_coords >= min_y, x_coords >= min_x)
+                masked = np.where(valid, res, -1)
+                _, mv, _, ml = cv2.minMaxLoc(masked)
+            else:
+                _, mv, _, ml = cv2.minMaxLoc(res)
+            if mv >= thresh:
+                return (ml[0] + cw // 2 + margin_x, ml[1] + ch // 2 + margin_y, float(mv))
             return None
 
-        # Return topmost (smallest Y)
-        best = min(matches, key=lambda p: p[1])
-        confidence = result[best[1], best[0]]
-        return (best[0] + w // 2, best[1] + h // 2, float(confidence))
-    else:
-        # Original behavior - best match
-        if max_val >= threshold:
-            cx = max_loc[0] + w // 2
-            cy = max_loc[1] + h // 2
-            return (cx, cy, float(max_val))
+    match = _find_in_result(result, threshold)
+    if match:
+        return match
 
-        # Return best match info if requested (even if below threshold)
-        if return_best_match:
-            cx = max_loc[0] + w // 2
-            cy = max_loc[1] + h // 2
-            return (cx, cy, float(max_val))
+    # No match found - return best match info if requested (for debugging)
+    if return_best_match:
+        cx = max_loc[0] + cw // 2 + margin_x
+        cy = max_loc[1] + ch // 2 + margin_y
+        return (cx, cy, float(max_val))
 
-        return None
+    return None
 
 
 def image_to_screen_coords(img_x, img_y, window_info, retina_scale=2):
