@@ -478,7 +478,8 @@ class WannaTapThatApp:
             type_text,
             human_type,
             random_delay,
-            get_resource_path
+            get_resource_path,
+            press_return,
         )
         import os
 
@@ -489,7 +490,7 @@ class WannaTapThatApp:
         # Debug: log resource paths
         debug_logger.log("WannaTapThat Debug Info")
         debug_logger.log("=" * 50)
-        for template in ['heart.png', 'textbox.png', 'send.png']:
+        for template in ['heart.png', 'add_comment.png', 'send_priority_like.png']:
             path = get_resource_path(template)
             exists = os.path.exists(path)
             debug_logger.log(f"  {template}: {path} -> {'EXISTS' if exists else 'MISSING'}")
@@ -589,7 +590,7 @@ class WannaTapThatApp:
                     # No heart - maybe comment box is already open?
                     if not self.skip_opener_var.get():
                         # Check if send button is visible (we already typed)
-                        send_recovery = find_icon(image, "send.png", threshold=0.60)
+                        send_recovery = find_icon(image, "send_priority_like.png", threshold=0.60)
                         if send_recovery and send_recovery[1] >= min_send_y and typed_on_current_profile:
                             debug_logger.log("No heart but send found - clicking send (already typed)")
                             click_at(send_recovery[0], send_recovery[1], window)
@@ -602,7 +603,7 @@ class WannaTapThatApp:
                         elif send_recovery and send_recovery[1] < min_send_y:
                             debug_logger.log(f"  send.png (recovery): REJECTED - y={send_recovery[1]} < {min_send_y} (top area false positive)")
 
-                        textbox_recovery = find_icon(image, "textbox.png", threshold=0.35)
+                        textbox_recovery = find_icon(image, "add_comment.png", threshold=0.35)
                         debug_logger.log_match_result("textbox.png (recovery)", textbox_recovery, 0.35)
                         if textbox_recovery and not typed_on_current_profile:
                             debug_logger.log("No heart but textbox found - attempting recovery")
@@ -617,11 +618,15 @@ class WannaTapThatApp:
                                 debug_logger.log("Typing interrupted by stop")
                                 break
                             typed_on_current_profile = True  # Mark that we've typed
-                            random_delay(0.3, 0.5, should_stop=lambda: not self.running)
+
+                            # Press Done to dismiss keyboard
+                            debug_logger.log("Pressing Done to dismiss keyboard")
+                            press_return()
+                            random_delay(0.5, 0.8, should_stop=lambda: not self.running)
 
                             image = capture_window(window["id"])
                             debug_logger.save_screenshot(image, "recovery_after_typing")
-                            send_pos = find_icon(image, "send.png", threshold=0.60)
+                            send_pos = find_icon(image, "send_priority_like.png", threshold=0.60)
                             debug_logger.log_match_result("send.png (recovery)", send_pos, 0.60)
                             if send_pos and send_pos[1] >= min_send_y:
                                 click_at(send_pos[0], send_pos[1], window)
@@ -637,7 +642,7 @@ class WannaTapThatApp:
                             debug_logger.log("Textbox found but already typed - skipping re-type, looking for send")
                             # Already typed, just need to find send
                             image = capture_window(window["id"])
-                            send_pos = find_icon(image, "send.png", threshold=0.60)
+                            send_pos = find_icon(image, "send_priority_like.png", threshold=0.60)
                             if send_pos and send_pos[1] >= min_send_y:
                                 click_at(send_pos[0], send_pos[1], window)
                                 sent += 1
@@ -673,8 +678,8 @@ class WannaTapThatApp:
                         continue
 
                     debug_logger.save_screenshot(image, "03_after_heart_click_likeonly")
-                    send_pos = find_icon(image, "send.png", threshold=0.60)
-                    best_send = find_icon(image, "send.png", threshold=0.60, return_best_match=True) if not send_pos else None
+                    send_pos = find_icon(image, "send_priority_like.png", threshold=0.60)
+                    best_send = find_icon(image, "send_priority_like.png", threshold=0.60, return_best_match=True) if not send_pos else None
                     debug_logger.log_match_result("send.png (like only)", send_pos, 0.60, best_match=best_send)
 
                     if send_pos and send_pos[1] >= min_send_y:
@@ -714,7 +719,7 @@ class WannaTapThatApp:
                     # Try to find textbox with retries
                     textbox_pos = None
                     for retry in range(3):
-                        textbox_pos = find_icon(image, "textbox.png", threshold=0.35)
+                        textbox_pos = find_icon(image, "add_comment.png", threshold=0.35)
                         debug_logger.log_match_result(f"textbox.png (try {retry+1})", textbox_pos, 0.35)
                         if textbox_pos:
                             break
@@ -747,9 +752,13 @@ class WannaTapThatApp:
                             break
                         typed_on_current_profile = True  # Mark that we've typed
                         debug_logger.log("Typing completed")
-                        random_delay(0.3, 0.7, should_stop=lambda: not self.running)
 
-                        # 3. Find and click send
+                        # 3. Press Done to dismiss keyboard
+                        debug_logger.log("Pressing Done to dismiss keyboard")
+                        press_return()
+                        random_delay(0.5, 0.8, should_stop=lambda: not self.running)
+
+                        # 4. Find and click Send Priority Like
                         image = capture_window(window["id"])
                         if image is None:
                             debug_logger.log("FAIL: Could not capture after typing")
@@ -757,9 +766,9 @@ class WannaTapThatApp:
                             continue
 
                         debug_logger.save_screenshot(image, "05_after_typing")
-                        send_pos = find_icon(image, "send.png", threshold=0.60)
-                        best_send = find_icon(image, "send.png", threshold=0.60, return_best_match=True) if not send_pos else None
-                        debug_logger.log_match_result("send.png", send_pos, 0.60, best_match=best_send)
+                        send_pos = find_icon(image, "send_priority_like.png", threshold=0.60)
+                        best_send = find_icon(image, "send_priority_like.png", threshold=0.60, return_best_match=True) if not send_pos else None
+                        debug_logger.log_match_result("send_priority_like.png", send_pos, 0.60, best_match=best_send)
 
                         if send_pos and send_pos[1] >= min_send_y:
                             random_delay(0.2, 0.5, should_stop=lambda: not self.running)
