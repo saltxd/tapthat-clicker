@@ -659,9 +659,9 @@ class WannaTapThatApp:
                     consecutive_failures += 1
                     time.sleep(1)
                     continue
-                # Add small random offset to click position (more human-like)
-                offset_x = random.randint(-5, 5)
-                offset_y = random.randint(-5, 5)
+                # Random offset in image coords (retina 2x, so /2 for screen px)
+                offset_x = random.randint(-20, 20)
+                offset_y = random.randint(-8, 8)
                 click_at(heart_pos[0] + offset_x, heart_pos[1] + offset_y, window)
                 debug_logger.log(f"Clicked heart at ({heart_pos[0]}, {heart_pos[1]})")
 
@@ -684,8 +684,8 @@ class WannaTapThatApp:
 
                     if send_pos and send_pos[1] >= min_send_y:
                         random_delay(0.2, 0.4, should_stop=lambda: not self.running)
-                        offset_x = random.randint(-3, 3)
-                        offset_y = random.randint(-3, 3)
+                        offset_x = random.randint(-30, 30)
+                        offset_y = random.randint(-8, 8)
                         click_at(send_pos[0] + offset_x, send_pos[1] + offset_y, window)
                         sent += 1
                         consecutive_failures = 0
@@ -737,8 +737,8 @@ class WannaTapThatApp:
                         debug_logger.save_screenshot(image, "04_textbox_not_found")
 
                     if textbox_pos:
-                        offset_x = random.randint(-3, 3)
-                        offset_y = random.randint(-3, 3)
+                        offset_x = random.randint(-30, 30)
+                        offset_y = random.randint(-8, 8)
                         click_at(textbox_pos[0] + offset_x, textbox_pos[1] + offset_y, window)
                         debug_logger.log(f"Clicked textbox at ({textbox_pos[0]}, {textbox_pos[1]})")
                         random_delay(0.3, 0.6, should_stop=lambda: not self.running)
@@ -772,8 +772,8 @@ class WannaTapThatApp:
 
                         if send_pos and send_pos[1] >= min_send_y:
                             random_delay(0.2, 0.5, should_stop=lambda: not self.running)
-                            offset_x = random.randint(-3, 3)
-                            offset_y = random.randint(-3, 3)
+                            offset_x = random.randint(-30, 30)
+                            offset_y = random.randint(-8, 8)
                             click_at(send_pos[0] + offset_x, send_pos[1] + offset_y, window)
                             sent += 1
                             consecutive_failures = 0
