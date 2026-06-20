@@ -9,7 +9,53 @@ import threading
 import time
 import random
 import subprocess
+import json
 from datetime import datetime
+from pathlib import Path
+
+try:
+    import fcntl  # POSIX-only; present on macOS (the only supported platform)
+except ImportError:
+    fcntl = None
+
+APP_NAME = "WannaTapThat"
+APP_VERSION = "1.0.0"
+
+
+def app_support_dir():
+    """Return (creating if needed) the per-user app-support directory."""
+    d = Path.home() / "Library" / "Application Support" / APP_NAME
+    try:
+        d.mkdir(parents=True, exist_ok=True)
+    except OSError:
+        pass
+    return d
+
+
+def load_settings():
+    """Load saved settings, tolerating a missing or corrupt file."""
+    try:
+        with open(app_support_dir() / "settings.json") as f:
+            data = json.load(f)
+        return data if isinstance(data, dict) else {}
+    except (FileNotFoundError, json.JSONDecodeError, OSError, ValueError):
+        return {}
+
+
+def acquire_single_instance_lock():
+    """Take an exclusive lock so only one copy drives iPhone Mirroring at a time.
+
+    Returns the open file handle (keep it alive for the process lifetime) or
+    None if another instance already holds the lock.
+    """
+    if fcntl is None:
+        return True  # can't lock on this platform; don't block startup
+    try:
+        fh = open(app_support_dir() / "instance.lock", "w")
+        fcntl.flock(fh, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        return fh
+    except OSError:
+        return None
 
 
 class DebugLogger:
@@ -190,7 +236,7 @@ def setup_theme(root):
         style.theme_use('clam')
 
     style.configure('.', background=BG, foreground=TEXT,
-                    font=('Helvetica', 11), focuscolor=BG)
+                    font=('Helvetica', 11), focuscolor=TEXT)
     style.configure('TFrame', background=BG)
     style.configure('TLabel', background=BG, foreground=TEXT)
     style.configure('Header.TLabel', font=('Helvetica', 26, 'bold'), foreground=TEXT)
@@ -198,7 +244,9 @@ def setup_theme(root):
     style.configure('Section.TLabel', font=('Helvetica', 11, 'bold'), foreground=ACCENT)
     style.configure('Muted.TLabel', font=('Helvetica', 10), foreground=MUTED)
     style.configure('Counter.TLabel', font=('Helvetica', 34, 'bold'), foreground=TEXT)
+    style.configure('Caption.TLabel', font=('Helvetica', 9, 'bold'), foreground=MUTED)
     style.configure('Skip.TLabel', font=('Helvetica', 12), foreground=ACCENT)
+    style.configure('Error.TLabel', font=('Helvetica', 10), foreground=DANGER)
 
     for widget in ('TCheckbutton', 'TRadiobutton'):
         style.configure(widget, background=BG, foreground=TEXT,
@@ -215,7 +263,7 @@ def setup_theme(root):
 
     style.configure('Accent.TButton', background=ACCENT, foreground='#ffffff',
                     font=('Helvetica', 12, 'bold'), borderwidth=0, relief='flat',
-                    padding=(10, 9), focuscolor=ACCENT)
+                    padding=(10, 9), focuscolor='#ffffff')
     style.map('Accent.TButton',
               background=[('disabled', SURFACE), ('pressed', ACCENT_DIM), ('active', ACCENT_HI)],
               foreground=[('disabled', MUTED)])
@@ -237,12 +285,9 @@ class WannaTapThatApp:
         self.root.resizable(False, False)
         self.running = False
 
-        # Set app icon if available
-        try:
-            # On macOS, the dock icon is handled by the app bundle
-            pass
-        except Exception:
-            pass
+        # Dock icon is handled by the .app bundle (Info.plist / .icns).
+        self._saved = load_settings()  # persisted opener + options
+        self._config_widgets = []  # controls locked while a run is active
 
         self.build_ui()
 
@@ -270,6 +315,11 @@ class WannaTapThatApp:
         self.opener_text.pack(padx=PAD, fill='x')
         self.placeholder = "Type your opener here..."
         self.opener_text.insert('1.0', self.placeholder)
+        saved_opener = self._saved.get('opener', '')
+        if saved_opener:
+            self.opener_text.delete('1.0', 'end')
+            self.opener_text.insert('1.0', saved_opener)
+            self.opener_text.config(fg=TEXT)
         self.opener_text.bind('<FocusIn>', self._on_opener_focus_in)
         self.opener_text.bind('<FocusOut>', self._on_opener_focus_out)
 
@@ -277,11 +327,12 @@ class WannaTapThatApp:
         ttk.Label(self.root, text="OPTIONS", style='Section.TLabel').pack(
             anchor='w', padx=PAD, pady=(16, 4))
 
-        self.randomize_var = tk.BooleanVar(value=False)
-        self.skip_opener_var = tk.BooleanVar(value=False)
-        self.verified_only_var = tk.BooleanVar(value=False)
-        self.browse_var = tk.BooleanVar(value=False)
-        self.debug_mode_var = tk.BooleanVar(value=False)
+        s = self._saved
+        self.randomize_var = tk.BooleanVar(value=s.get('randomize', False))
+        self.skip_opener_var = tk.BooleanVar(value=s.get('skip_opener', False))
+        self.verified_only_var = tk.BooleanVar(value=s.get('verified_only', False))
+        self.browse_var = tk.BooleanVar(value=s.get('browse', False))
+        self.debug_mode_var = tk.BooleanVar(value=s.get('debug', False))
 
         for text, var in [
             ("Randomize (separate openers with |)", self.randomize_var),
@@ -290,43 +341,56 @@ class WannaTapThatApp:
             ("Browse profile before liking", self.browse_var),
             ("Debug mode (screenshots to /tmp/wtt_debug/)", self.debug_mode_var),
         ]:
-            ttk.Checkbutton(self.root, text=text, variable=var).pack(
-                anchor='w', padx=IND, pady=1)
+            cb = ttk.Checkbutton(self.root, text=text, variable=var)
+            cb.pack(anchor='w', padx=IND, pady=1)
+            self._config_widgets.append(cb)
 
         # ---- Speed -------------------------------------------------------
         ttk.Separator(self.root).pack(fill='x', padx=PAD, pady=(14, 0))
         ttk.Label(self.root, text="SPEED", style='Section.TLabel').pack(
             anchor='w', padx=PAD, pady=(12, 4))
 
-        self.speed_var = tk.StringVar(value="normal")
+        self.speed_var = tk.StringVar(value=s.get('speed', 'normal'))
         for text, value in [
             ("Fast (2-3 sec between likes)", "fast"),
             ("Normal (3-5 sec)", "normal"),
             ("Slow (5-8 sec)", "slow"),
         ]:
-            ttk.Radiobutton(self.root, text=text, variable=self.speed_var,
-                            value=value).pack(anchor='w', padx=IND, pady=1)
+            rb = ttk.Radiobutton(self.root, text=text, variable=self.speed_var,
+                                 value=value)
+            rb.pack(anchor='w', padx=IND, pady=1)
+            self._config_widgets.append(rb)
 
         # ---- Stop after --------------------------------------------------
         ttk.Separator(self.root).pack(fill='x', padx=PAD, pady=(14, 0))
         ttk.Label(self.root, text="STOP AFTER", style='Section.TLabel').pack(
             anchor='w', padx=PAD, pady=(12, 4))
 
-        self.stop_var = tk.StringVar(value="25")
+        self.stop_var = tk.StringVar(value=s.get('stop', '25'))
         for text, value in [("10 likes", "10"), ("25 likes", "25"), ("50 likes", "50")]:
-            ttk.Radiobutton(self.root, text=text, variable=self.stop_var,
-                            value=value).pack(anchor='w', padx=IND, pady=1)
+            rb = ttk.Radiobutton(self.root, text=text, variable=self.stop_var,
+                                 value=value)
+            rb.pack(anchor='w', padx=IND, pady=1)
+            self._config_widgets.append(rb)
 
         custom_frame = ttk.Frame(self.root)
         custom_frame.pack(anchor='w', padx=IND, pady=1)
-        ttk.Radiobutton(custom_frame, text="Custom:", variable=self.stop_var,
-                        value="custom").pack(side='left')
-        self.custom_count = ttk.Entry(custom_frame, width=6)
+        rb = ttk.Radiobutton(custom_frame, text="Custom:", variable=self.stop_var,
+                             value="custom")
+        rb.pack(side='left')
+        self._config_widgets.append(rb)
+        # Only allow digits in the custom-count field
+        vcmd = (self.root.register(lambda p: p == '' or p.isdigit()), '%P')
+        self.custom_count = ttk.Entry(custom_frame, width=6, validate='key',
+                                      validatecommand=vcmd)
         self.custom_count.pack(side='left', padx=6)
-        self.custom_count.insert(0, "100")
+        self.custom_count.insert(0, s.get('custom_count', '100') or '100')
+        self._config_widgets.append(self.custom_count)
 
-        ttk.Radiobutton(self.root, text="Until I stop", variable=self.stop_var,
-                        value="unlimited").pack(anchor='w', padx=IND, pady=1)
+        rb = ttk.Radiobutton(self.root, text="Until I stop", variable=self.stop_var,
+                             value="unlimited")
+        rb.pack(anchor='w', padx=IND, pady=1)
+        self._config_widgets.append(rb)
 
         # ---- Buttons -----------------------------------------------------
         btn_frame = ttk.Frame(self.root)
@@ -344,12 +408,18 @@ class WannaTapThatApp:
         self.count_var = tk.StringVar(value="0")
         ttk.Label(status_frame, textvariable=self.count_var,
                   style='Counter.TLabel').pack()
+        ttk.Label(status_frame, text="LIKES SENT", style='Caption.TLabel').pack()
         self.skipped_var = tk.StringVar(value="")
         ttk.Label(status_frame, textvariable=self.skipped_var,
-                  style='Skip.TLabel').pack()
+                  style='Skip.TLabel').pack(pady=(4, 0))
         self.status_var = tk.StringVar(value="Ready")
-        ttk.Label(status_frame, textvariable=self.status_var,
-                  style='Muted.TLabel').pack(pady=(2, 0))
+        self.status_label = ttk.Label(status_frame, textvariable=self.status_var,
+                                      style='Muted.TLabel')
+        self.status_label.pack(pady=(2, 0))
+        # Keep the idle counter's denominator in sync with the STOP AFTER choice
+        self.stop_var.trace_add('write', lambda *_: self._sync_idle_counter())
+        self.custom_count.bind('<KeyRelease>', lambda *_: self._sync_idle_counter())
+        self._sync_idle_counter()
 
     def _on_opener_focus_in(self, event):
         """Clear placeholder when user clicks in opener field."""
@@ -362,6 +432,43 @@ class WannaTapThatApp:
         if not self.opener_text.get('1.0', 'end').strip():
             self.opener_text.insert('1.0', self.placeholder)
             self.opener_text.config(fg=MUTED)
+
+    def _sync_idle_counter(self):
+        """Keep the big counter's denominator matching STOP AFTER while idle."""
+        if self.running:
+            return
+        target = self.get_max_likes()
+        self.count_var.set("0" if target < 0 else f"0 / {target}")
+
+    def _set_config_state(self, state):
+        """Enable/disable all run-config controls (locked during a run)."""
+        for w in self._config_widgets:
+            try:
+                w.config(state=state)
+            except tk.TclError:
+                pass
+
+    def save_settings(self):
+        """Persist opener + options so they survive a relaunch."""
+        opener = self.opener_text.get('1.0', 'end').strip()
+        if opener == self.placeholder:
+            opener = ''
+        data = {
+            'opener': opener,
+            'randomize': self.randomize_var.get(),
+            'skip_opener': self.skip_opener_var.get(),
+            'verified_only': self.verified_only_var.get(),
+            'browse': self.browse_var.get(),
+            'debug': self.debug_mode_var.get(),
+            'speed': self.speed_var.get(),
+            'stop': self.stop_var.get(),
+            'custom_count': self.custom_count.get().strip(),
+        }
+        try:
+            with open(app_support_dir() / "settings.json", 'w') as f:
+                json.dump(data, f, indent=2)
+        except OSError:
+            pass
 
     def get_opener(self) -> str:
         """Get opener text, randomized if enabled."""
@@ -389,15 +496,16 @@ class WannaTapThatApp:
         return random.uniform(min_d, max_d)
 
     def get_max_likes(self) -> int:
-        """Get max likes, -1 for unlimited."""
+        """Get max likes, -1 for unlimited. Custom <= 0 / invalid falls back to 25."""
         stop = self.stop_var.get()
         if stop == 'unlimited':
             return -1
         if stop == 'custom':
             try:
-                return int(self.custom_count.get())
+                n = int(self.custom_count.get())
             except ValueError:
                 return 25  # Fallback
+            return n if n > 0 else 25  # never let <=0 reach the unlimited path
         return int(stop)
 
     def start(self):
@@ -417,6 +525,18 @@ class WannaTapThatApp:
             opener = self.opener_text.get('1.0', 'end').strip()
             if not opener or opener == self.placeholder:
                 messagebox.showerror("Error", "Please enter an opener message")
+                self.root.lift()
+                self.root.focus_force()
+                return
+
+        # Validate the custom stop count (must be a whole number > 0)
+        if self.stop_var.get() == 'custom':
+            raw = self.custom_count.get().strip()
+            if not raw.isdigit() or int(raw) <= 0:
+                messagebox.showerror(
+                    "Invalid count",
+                    "Custom stop count must be a whole number greater than 0."
+                )
                 self.root.lift()
                 self.root.focus_force()
                 return
@@ -453,10 +573,13 @@ class WannaTapThatApp:
             self.root.focus_force()
             return
 
+        self.save_settings()  # remember this configuration for next launch
+
         self.running = True
         self.start_btn.config(state='disabled')
         self.stop_btn.config(state='normal')
         self.opener_text.config(state='disabled')
+        self._set_config_state('disabled')  # freeze config to match the running loop
 
         thread = threading.Thread(target=self.run_liker, daemon=True)
         thread.start()
@@ -464,11 +587,17 @@ class WannaTapThatApp:
     def stop(self):
         """Stop the auto-liker."""
         self.running = False
+        self.stop_btn.config(state='disabled')  # acknowledge the click immediately
         self.status_var.set("Stopping...")
 
-    def update_status(self, message):
-        """Thread-safe status update."""
-        self.root.after(0, lambda: self.status_var.set(message))
+    def update_status(self, message, is_error=False):
+        """Thread-safe status update; is_error renders it in the danger color."""
+        style = 'Error.TLabel' if is_error else 'Muted.TLabel'
+
+        def apply():
+            self.status_var.set(message)
+            self.status_label.configure(style=style)
+        self.root.after(0, apply)
 
     def update_count(self, text):
         """Thread-safe count update."""
@@ -533,12 +662,12 @@ class WannaTapThatApp:
 
             # Too many failures in a row
             if consecutive_failures >= max_failures:
-                self.update_status("Stopped: too many failures")
+                self.update_status("Stopped: too many failures", is_error=True)
                 break
 
             # If capture keeps failing, it's likely a permission issue - stop immediately
             if capture_failures >= 2:
-                self.update_status("Screen Recording permission needed")
+                self.update_status("Screen Recording permission needed", is_error=True)
                 break
 
             # Update display with animated dots
@@ -555,7 +684,7 @@ class WannaTapThatApp:
                 window = find_iphone_window()
                 if not window:
                     debug_logger.log("FAIL: No iPhone window found")
-                    self.update_status("Lost iPhone Mirroring window!")
+                    self.update_status("Lost iPhone Mirroring window!", is_error=True)
                     consecutive_failures += 1
                     time.sleep(1)
                     continue
@@ -565,7 +694,7 @@ class WannaTapThatApp:
                 image = capture_window(window["id"])
                 if image is None:
                     debug_logger.log("FAIL: Could not capture window (permission issue?)")
-                    self.update_status("Capture failed")
+                    self.update_status("Capture failed", is_error=True)
                     consecutive_failures += 1
                     capture_failures += 1
                     time.sleep(0.5)
@@ -677,7 +806,7 @@ class WannaTapThatApp:
                                 debug_logger.log(f"  send.png: REJECTED - y={send_pos[1]} < {min_send_y} (top area false positive)")
 
                     debug_logger.log("FAIL: Heart not found, no recovery possible")
-                    self.update_status("No heart found")
+                    self.update_status("No heart found", is_error=True)
                     consecutive_failures += 1
                     time.sleep(1)
                     continue
@@ -701,7 +830,7 @@ class WannaTapThatApp:
                             debug_logger.log_match_result("skip.png", None, SKIP_THRESHOLD,
                                                           best_match=best_skip)
                             debug_logger.save_screenshot(image, "skip_button_not_found")
-                            self.update_status("Skip button not found")
+                            self.update_status("Skip button not found", is_error=True)
                             consecutive_failures += 1
                             time.sleep(1)
                             continue
@@ -761,7 +890,7 @@ class WannaTapThatApp:
                             break
                     if not heart_pos:
                         debug_logger.log("Browse: heart not found after scroll-back - skipping like")
-                        self.update_status("No heart after browse")
+                        self.update_status("No heart after browse", is_error=True)
                         consecutive_failures += 1
                         time.sleep(1)
                         continue
@@ -913,14 +1042,14 @@ class WannaTapThatApp:
 
             except FileNotFoundError as e:
                 debug_logger.log(f"ERROR: Missing template: {e}")
-                self.update_status(f"Missing template: {e}")
+                self.update_status(f"Missing template: {e}", is_error=True)
                 consecutive_failures += 1
                 time.sleep(2)
             except Exception as e:
                 debug_logger.log(f"ERROR: Exception: {e}")
                 import traceback
                 debug_logger.log(traceback.format_exc())
-                self.update_status(f"Error: {str(e)[:50]}")
+                self.update_status(f"Error: {str(e)[:50]}", is_error=True)
                 consecutive_failures += 1
                 time.sleep(1)
 
@@ -934,9 +1063,11 @@ class WannaTapThatApp:
             self.count_var.set(count_text)
             self.skipped_var.set(f"Skipped {skipped} unverified" if skipped > 0 else "")
             self.status_var.set("Done!")
+            self.status_label.configure(style='Muted.TLabel')
             self.start_btn.config(state='normal')
             self.stop_btn.config(state='disabled')
             self.opener_text.config(state='normal')
+            self._set_config_state('normal')  # unlock config controls
             self.running = False
 
         self.root.after(0, finish)
@@ -944,8 +1075,7 @@ class WannaTapThatApp:
 
 def main():
     if '--version' in sys.argv:
-        print("WannaTapThat diagnostics")
-        print(f"  Version: 0.0.0")
+        print(f"{APP_NAME} {APP_VERSION}")
         print(f"  Python: {platform.python_version()} ({sys.executable})")
         print(f"  Frozen: {getattr(sys, 'frozen', False)}")
         print(f"  argv: {sys.argv}")
@@ -960,22 +1090,54 @@ def main():
             raise SystemExit(1)
         return
 
+    # Only one copy may drive iPhone Mirroring at a time
+    instance_lock = acquire_single_instance_lock()
+    if instance_lock is None:
+        warn = tk.Tk()
+        warn.withdraw()
+        messagebox.showerror(
+            APP_NAME,
+            f"{APP_NAME} is already running.\n\n"
+            "Only one copy can control iPhone Mirroring at a time."
+        )
+        warn.destroy()
+        return
+
     root = tk.Tk()
     setup_theme(root)  # dark + purple theme (must run before building widgets)
 
     app = WannaTapThatApp(root)
 
-    # Handle window close
+    # Surface uncaught callback exceptions instead of swallowing them to stderr
+    # (a bundled .app has no visible console).
+    def report_exc(exc, val, tb):
+        import traceback
+        traceback.print_exception(exc, val, tb)
+        try:
+            messagebox.showerror(APP_NAME, f"Unexpected error:\n{val}")
+        except Exception:
+            pass
+    root.report_callback_exception = report_exc
+
+    # Handle window close (and Cmd-Q, which otherwise bypasses this guard)
     def on_closing():
         if app.running:
             if messagebox.askokcancel("Quit", "Liker is running. Stop and quit?"):
                 app.running = False
+                app.save_settings()
                 root.after(500, root.destroy)
         else:
+            app.save_settings()
             root.destroy()
 
     root.protocol("WM_DELETE_WINDOW", on_closing)
+    try:
+        root.createcommand('tk::mac::Quit', on_closing)  # macOS Cmd-Q / dock Quit
+    except tk.TclError:
+        pass
     root.mainloop()
+    # keep a reference so the lock file handle isn't GC'd before mainloop ends
+    del instance_lock
 
 
 if __name__ == '__main__':
