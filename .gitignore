@@ -1,7 +1,9 @@
 # Build artifacts
 build/
 dist/
+# Ignore generated specs, but track the canonical PyInstaller build config
 *.spec
+!WannaTapThat.spec
 
 # Python
 __pycache__/
@@ -26,5 +28,6 @@ venv/
 *.png
 !resources/*.png
 
-# Nuitka
+# Build tool crash reports
 nuitka-crash-report.xml
+*.crash-report.xml

@@ -172,14 +172,6 @@ def is_profile_verified(image, find_icon, threshold=VERIFIED_THRESHOLD,
                      return_best_match=True)
     return False, (best[2] if best else 0.0)
 
-print("=" * 50)
-print("DEBUG: WannaTapThat launch info")
-print(f"Running from: {sys.executable}")
-print(f"Frozen: {getattr(sys, 'frozen', False)}")
-print(f"CWD: {os.getcwd()}")
-print(f"__file__: {__file__ if '__file__' in dir() else 'N/A'}")
-print("=" * 50)
-
 
 def run_permission_check(find_iphone_window, capture_window):
     """Debug helper: attempt to find and capture the mirroring window."""
@@ -517,8 +509,6 @@ class WannaTapThatApp:
             self.root.lift()
             self.root.focus_force()
             return
-
-        run_permission_check(find_iphone_window, capture_window)
 
         # Validate opener (unless "Like only" is checked)
         if not self.skip_opener_var.get():

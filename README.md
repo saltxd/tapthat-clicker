@@ -1,159 +1,235 @@
 # WannaTapThat
 
-Auto-liker with opener for Hinge via iPhone Mirroring.
+**Auto-like Hinge profiles (and send your opener) from your Mac, by driving iPhone Mirroring.**
 
-## Quick Start (Development)
+WannaTapThat is a small macOS app that watches your iPhone Mirroring window, finds the heart button on each Hinge profile, taps it, types the opener you wrote, and hits send — over and over, so you don't have to. It uses on-screen image matching (the same idea as a person looking at the screen and tapping), with human-like delays and random tap offsets.
+
+---
+
+> ## ⚠️ Please read this before you download
+>
+> **This is an experimental, educational project. Use it at your own risk.**
+>
+> - **It violates Hinge's Terms of Service.** Automating activity on Hinge is against their rules. Using this app can get your account **banned, shadowbanned, or rate-limited.** There is no way to make automation "safe" or "undetectable," and this app does not claim to be either.
+> - **It interacts with real people.** Every profile it likes is a real human who will believe a person chose them and wrote to them. Don't be a jerk. Use a thoughtful, genuine opener. Don't spam.
+> - **Provided as-is, with no warranty.** The author is **not responsible** for banned accounts, lost matches, awkward conversations, or any other consequences of using this software.
+> - This is not affiliated with, endorsed by, or connected to Hinge or Match Group in any way.
+>
+> If any of that isn't okay with you, don't use this. That's a completely reasonable choice.
+
+---
+
+## What you need
+
+| Requirement | Details |
+|---|---|
+| **A Mac running macOS Sequoia (15) or later** | iPhone Mirroring is a macOS 15+ feature. |
+| **iPhone Mirroring set up and working** | Your iPhone must be paired with this Mac and able to mirror its screen. Open the **iPhone Mirroring** app and confirm you can see and control your phone first. |
+| **An iPhone signed into Hinge** | Open Hinge on the mirrored phone and get to the swiping/discover screen. |
+| **Screen Recording permission** | So the app can "see" the iPhone Mirroring window. |
+| **Accessibility permission** | So the app can tap and type for you. |
+
+You'll grant the two permissions during setup (below).
+
+---
+
+## Install
+
+### 1. Download
+
+Go to the [**Releases**](../../releases) page and download the latest **`WannaTapThat.dmg`**.
+
+### 2. Drag to Applications
+
+Open the `.dmg`, then drag **WannaTapThat** onto the **Applications** folder.
+
+### 3. Open it the first time (Gatekeeper)
+
+This app is **not signed by an Apple Developer account or notarized** (that costs money the author hasn't spent yet). Because of that, macOS will refuse to open it on the first try with a message like *"WannaTapThat can't be opened because Apple cannot check it for malicious software"* or *"WannaTapThat is damaged and can't be opened."*
+
+This is expected. Use **one** of these to get past it:
+
+**Option A — Right-click → Open**
+
+1. In Applications, **right-click** (or Control-click) **WannaTapThat**.
+2. Choose **Open**.
+3. In the dialog that appears, click **Open** again.
+
+You only have to do this once. (If you only see a "Move to Trash" / "Cancel" dialog with no Open button, use Option B.)
+
+**Option B — Terminal command**
+
+Open **Terminal** and paste this, then press Return:
 
 ```bash
-# Install dependencies
-pip install -r requirements.txt
-
-# Run the app
-python gui.py
+xattr -dr com.apple.quarantine /Applications/WannaTapThat.app
 ```
 
-## Building a Distributable App
+Then open the app normally. This removes the "downloaded from the internet" quarantine flag that triggers Gatekeeper.
+
+### 4. Grant the two permissions
+
+The first time you run it, macOS will prompt you for permissions. If it doesn't, grant them manually:
+
+1. Open **System Settings → Privacy & Security**.
+2. Under **Screen Recording**, turn on **WannaTapThat**.
+3. Under **Accessibility**, turn on **WannaTapThat**.
+4. Quit and reopen the app if it asks you to.
+
+> **Important:** macOS ties these permissions to the exact build of the app. **Every time you install an app update, the permissions reset** and you'll need to turn them back on for the new version. See [Troubleshooting](#troubleshooting) if the app can't see your phone after an update.
+
+---
+
+## How to use
+
+1. Open **iPhone Mirroring** and make sure you can see your phone.
+2. Open **Hinge** on the mirrored phone and get to the main discover screen (where you swipe through profiles).
+3. Open **WannaTapThat**.
+4. Type your **opener** in the box at the top.
+5. Pick your options and speed (below).
+6. Choose **how many** likes to send.
+7. Click **START**.
+
+Leave it alone while it runs — it's controlling your phone, so don't click around. Click **STOP** any time. The big counter shows how many likes it has sent.
+
+### Your opener
+
+Whatever you type in the opener box gets sent with each like. Write something real — it's going to a real person.
+
+### Options
+
+| Option | What it does |
+|---|---|
+| **Randomize (separate openers with `\|`)** | Type several openers separated by a `\|` (pipe) character, e.g. `Hey, love your dog! \| That hiking pic is great \| What's your go-to coffee order?`. The app picks one at random for each profile, so you're not sending the same line every time. |
+| **Like only (skip opener)** | Just likes profiles without writing anything. The opener box is ignored. |
+| **Verified only (skip unverified)** | Only likes profiles that have Hinge's **verified badge**. Unverified profiles are skipped (the app taps the X to pass) and counted in the "Skipped" line. If it hits a long run of unverified profiles in a row, it stops on its own as a safety check. |
+| **Browse profile before liking** | Scrolls down through the profile, pauses as if reading, then scrolls back to the top and likes. Slower, but more human-like. |
+| **Debug mode** | Saves screenshots and a log of every step to `/tmp/wtt_debug/`. Useful if something isn't working and you want to see what the app saw. |
+
+### Speed
+
+How long it waits between profiles:
+
+| Speed | Delay |
+|---|---|
+| **Fast** | 2–3 seconds |
+| **Normal** | 3–5 seconds |
+| **Slow** | 5–8 seconds |
+
+Slower is more human-like. It also occasionally inserts longer pauses on its own to mimic someone actually reading.
+
+### Stop after
+
+Choose **10**, **25**, or **50** likes, enter a **Custom** number, or pick **Until I stop** to run until you click STOP. The counter shows progress (e.g. `12 / 25`).
+
+Your opener and all your settings are remembered for next time.
+
+---
+
+## Troubleshooting
+
+### "iPhone Not Found" / no iPhone window
+
+- Make sure the **iPhone Mirroring** app is actually open and showing your phone before you click START.
+- Confirm **Screen Recording** permission is on for WannaTapThat (**System Settings → Privacy & Security → Screen Recording**).
+- If you just updated the app, the permission likely reset — see the section below.
+
+### The app can't see my phone after I updated it
+
+This is the most common issue. macOS links Screen Recording and Accessibility permissions to the specific build of the app, so **a new version is treated as a brand-new app** and the old permission toggle doesn't apply.
+
+Fix it:
+
+1. Open **System Settings → Privacy & Security**.
+2. Toggle **WannaTapThat** **off and back on** under both **Screen Recording** and **Accessibility**.
+3. Quit and reopen WannaTapThat.
+
+If toggling doesn't help, fully reset the permissions and re-grant them. In Terminal:
 
 ```bash
-# Build macOS app bundle
+tccutil reset ScreenCapture
+tccutil reset Accessibility
+```
+
+Then reopen the app and grant the permissions again when prompted.
+
+### "Capture failed" / "Screen Recording permission needed"
+
+The app found the window but couldn't read its pixels — that's a Screen Recording permission problem. Follow the steps above to re-grant it, then restart the app.
+
+### "No heart found"
+
+The app couldn't locate the like button on the screen. Usually one of:
+
+- You're **not on the Hinge discover/profile screen** (you're in chat, settings, a paywall, etc.). Get back to the profile view and try again.
+- The **iPhone Mirroring window is too small, partly off-screen, or covered.** Make it larger and fully visible.
+- Hinge changed its layout in an app update. Turn on **Debug mode**, run it once, and check the screenshots in `/tmp/wtt_debug/` to see what it captured. (Layout changes may require a new release.)
+
+### It's tapping the wrong thing / sending in the wrong place
+
+Keep the iPhone Mirroring window fully visible and don't resize or move it while the app runs. Don't click or type on your Mac during a run — you'll fight the automation for control.
+
+### It stopped on its own
+
+The app stops itself after too many failures in a row (for example, if it loses the window or runs out of profiles), or — in **Verified only** mode — after a long streak of unverified profiles. Check the status line at the bottom for the reason.
+
+---
+
+## FAQ
+
+**Is it safe?**
+Technically your Mac is fine. Your Hinge *account* is the thing at risk. Automating Hinge breaks their Terms of Service, so there's a real chance of a ban or shadowban. Nobody can promise otherwise — use it knowing that.
+
+**Will I get banned?**
+Maybe. There's no way to guarantee you won't. Going slow, sending genuine openers, and not running it for hours on end is more cautious than blasting Fast on Unlimited — but "more cautious" is not "safe." You're accepting the risk.
+
+**Does it work on Tinder?**
+No. WannaTapThat is built specifically for **Hinge's** layout. (There's a separate sibling project for Tinder, but this app is Hinge-only.)
+
+**Why is it asking for Screen Recording permission?**
+It's not recording or uploading anything. The only way for the app to "see" the heart button is to read the pixels of the iPhone Mirroring window, and macOS classifies reading another window's pixels as "Screen Recording." Everything stays on your Mac.
+
+**Does it send my data anywhere?**
+No. There's no server and no account. Your opener and settings are saved locally on your Mac (in `~/Library/Application Support/WannaTapThat/`).
+
+**Why does macOS say it's "damaged" or "can't be checked"?**
+Because it isn't code-signed or notarized by Apple. It's not actually damaged. See [Install, step 3](#3-open-it-the-first-time-gatekeeper).
+
+---
+
+## Building from source (for developers)
+
+WannaTapThat is Python (tkinter UI) using PyObjC/Quartz for window access and OpenCV for template matching, packaged into a `.app` with PyInstaller.
+
+```bash
+# Run it directly during development
+python3 -m venv venv && source venv/bin/activate
+pip install -r requirements.txt
+python gui.py
+
+# Build the macOS .app bundle (PyInstaller)
 ./build.sh
 
-# Create DMG for distribution
+# Package it into a DMG (needs: brew install create-dmg)
 ./create-dmg.sh
 ```
 
-## How It Works
+The `resources/` folder holds the template images (heart, send button, verified badge, skip button, etc.) used to find UI elements. If a Hinge restyle breaks matching, re-capture and replace those PNGs.
 
-1. Finds the iPhone Mirroring window via Quartz APIs
-2. Uses OpenCV template matching to find the heart button (bottom 30% of screen)
-3. *(Verified only, optional)* Checks the top of the profile for the "Verified" badge — if absent, taps the X (skip) button and moves on instead of liking
-4. Clicks heart to like the profile
-5. Finds the text input field
-6. Types your opener message with human-like keystroke delays
-7. Clicks send
-8. Repeats with randomized delays between profiles
+For maintainers cutting a release (code signing, notarization, and publishing a download that installs cleanly), see **[RELEASING.md](RELEASING.md)**.
 
-### Verified-only mode
+> **Heads up on permissions when rebuilding:** every rebuild produces a new code signature, which macOS treats as a new app — so Screen Recording and Accessibility permissions reset on each build. To re-grant cleanly, run `tccutil reset ScreenCapture` and `tccutil reset Accessibility`, then relaunch. You can also run bundled diagnostics without the UI:
+>
+> ```bash
+> ./dist/WannaTapThat.app/Contents/MacOS/WannaTapThat --diagnostics
+> ```
+>
+> This prints window-lookup and capture results and writes `/tmp/debug_capture.png` when capture works.
 
-Tick **"Verified only (skip unverified)"** to only like profiles with Hinge's
-verified badge. After the heart is found (confirming we're on a profile), the
-top ~45% of the screen is matched against `hinge_verified.png`. A match above
-`VERIFIED_THRESHOLD` (0.78) means verified → like; otherwise the profile is
-skipped by tapping the X button (`skip.png`). Real verified badges match
-~0.89–1.0 while unverified profiles score ~0.65, so the threshold separates them
-cleanly. A consecutive-skip safety cap (200) stops the run if a deck is
-essentially all unverified. Mirrors TinderTapper's verified-only filter.
+---
 
-### Browse mode
+## License & disclaimer
 
-Tick **"Browse profile before liking"** for more human-like behavior. On each
-profile we're about to like, it scrolls down a randomized amount (~260–420px),
-pauses 1–2s as if reading, then over-scrolls back up so iOS rubber-banding
-lands it at the exact top, and re-finds the first heart before liking. Because
-the badge only lives at the top, this runs **after** the verified check, so it
-never browses a profile that's going to be skipped. It deliberately does **not**
-like a deeper photo/prompt — scroll landing is unpredictable, so changing which
-element is tapped would risk overshooting into the next profile. Scrolling uses
-`scroll_at()` (synthetic scroll-wheel events) in `clicker.py`.
+Released under the [MIT License](LICENSE) — provided **as-is**, with no warranty of any kind. This is an experimental, educational project. Using it to automate Hinge violates Hinge's Terms of Service and may result in account action. You are solely responsible for how you use it and for any consequences. Not affiliated with Hinge or Match Group.
 
-### Template Matching
-
-Uses `TM_CCOEFF_NORMED` with **cropped templates** (15% margin trim) to avoid background-dependent edge artifacts. This was critical for reliability on profiles with bright/white backgrounds where the original full-template approach would fail.
-
-Key parameters:
-- Heart threshold: 0.65 (topmost match in bottom 30% of screen)
-- Send threshold: 0.60
-- Speed delays: fast (2-3s), normal (3-5s), slow (5-8s)
-
-### Anti-Detection
-- Random click offsets (+-5px) on each button press
-- Variable inter-profile delays
-- Long pause injection every 8-15 likes (simulates reading)
-
-## Icon Templates
-
-The `resources/` folder contains template images used for finding UI elements:
-
-- `heart.png` - The heart/like button
-- `textbox.png` - The text input field
-- `send.png` - The send button
-- `hinge_verified.png` - The "Verified" badge (verified-only mode)
-- `skip.png` - The X / skip button (verified-only mode)
-
-If matching isn't working well, you can capture new templates:
-1. Take a screenshot of iPhone Mirroring with Hinge open
-2. Crop to just the button/element
-3. Replace the PNG in `resources/`
-
-## Shared Module: clicker.py
-
-`clicker.py` is the core automation module shared with TinderTapper. It provides:
-
-| Function | Purpose |
-|----------|---------|
-| `find_iphone_window()` | Locate iPhone Mirroring window via Quartz |
-| `capture_window(wid)` | Screenshot a window by ID (returns PIL Image) |
-| `find_icon(image, template, ...)` | Template matching with cropped margins, region filtering, topmost mode |
-| `click_at(x, y, window)` | Click at image coordinates (auto-converts to screen coords via 2x Retina) |
-| `scroll_at(x, y, amount, window)` | Smooth scroll-wheel swipe at image coords (negative = down, positive = up) |
-| `random_delay(min, max)` | Sleep with optional early-stop callback |
-| `type_text(text)` / `human_type(text)` | Keyboard input simulation |
-| `press_key(key)` / `press_return()` | Single key press simulation |
-| `activate_app(name)` | Bring app to front via NSWorkspace |
-
-## Recent Changes
-
-### 2026-02-07: Cropped Template Matching Fix
-- **Problem**: Heart detection failed on profiles with bright/white backgrounds (Nadia, Dina, Lindsay). The heart.png template had dark edge pixels that mismatched against light backgrounds.
-- **Fix**: Three changes to `find_icon()` in clicker.py:
-  1. Crop templates by 15% margins before matching (removes background-dependent edges)
-  2. Peak refinement in topmost matching (5px neighborhood search for highest confidence)
-  3. Apply min_x/min_y filtering in non-topmost mode (was only applied in topmost mode)
-- **Result**: 23/23 test screenshots pass, minimum confidence 0.815 (+0.165 margin above threshold). Ran 83 consecutive profiles without failure in production.
-
-## Requirements
-
-- macOS 14+ (for iPhone Mirroring)
-- iPhone with Hinge installed
-- Screen Recording permission for the app
-
-## Permissions
-
-On first run, macOS will ask for:
-- **Accessibility** - Required for clicking and typing
-- **Screen Recording** - Required for capturing iPhone Mirroring window
-
-Go to System Settings > Privacy & Security to grant these.
-
-### Troubleshooting Screen Recording Permission
-
-- You can now run bundled diagnostics from Terminal without launching the UI:
-
-  ```bash
-  ./dist/WannaTapThat.app/Contents/MacOS/WannaTapThat --diagnostics
-  ```
-
-  This prints the detected Python/runtime info, window lookup results, and whether `CGWindowListCreateImage` succeeds. The tool also writes `/tmp/debug_capture.png` when capture works.
-
-- macOS ties Screen Recording permission to the code signature of the `.app`. PyInstaller uses an ad-hoc signature by default, so every rebuild has a new code hash. After each new build, macOS treats it as a brand-new app. Because of that the System Settings toggle you enabled for the previous build does **not** apply to the new binary and `CGWindowListCreateImage` will return `None`.
-
-  To fix this:
-
-  1. Remove the stale permission entry and re-grant it for the current build:
-     ```bash
-     tccutil reset ScreenCapture
-     tccutil reset Accessibility
-     ```
-     then re-run the `.app` so macOS prompts again, or manually re-enable it under Privacy & Security.
-  2. For a permanent fix, sign the bundle with a consistent code signing identity:
-     ```bash
-     codesign --force --deep --options runtime \
-       --sign "Developer ID Application: YOUR NAME (TEAMID)" \
-       dist/WannaTapThat.app
-     ```
-  3. **Patching in-place** preserves permissions without resetting:
-     ```bash
-     cp dist/WannaTapThat.app/Contents/MacOS/WannaTapThat /Applications/WannaTapThat.app/Contents/MacOS/WannaTapThat
-     rsync -a --delete dist/WannaTapThat.app/Contents/Frameworks/ /Applications/WannaTapThat.app/Contents/Frameworks/
-     codesign --force --deep --sign - /Applications/WannaTapThat.app
-     ```
+*Be thoughtful. Real people are on the other side of every tap.*

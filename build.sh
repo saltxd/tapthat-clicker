@@ -1,70 +1,61 @@
 #!/bin/bash
-# Build script for WannaTapThat macOS app
+# Build the WannaTapThat macOS .app bundle (PyInstaller).
+#
+# Usage:
+#   ./build.sh                 # build an ad-hoc-signed .app (Gatekeeper-blocked)
+#   CODESIGN_IDENTITY="Developer ID Application: Your Name (TEAMID)" ./build.sh
+#                              # build + sign with a Developer ID (for notarization)
+#
+# For the full signed + notarized release flow, see RELEASING.md / notarize.sh.
 
-set -e
+set -euo pipefail
 
-echo "=== WannaTapThat Build Script ==="
-echo ""
+cd "$(dirname "$0")"
 
-# Check for required tools
-if ! command -v python3 &> /dev/null; then
-    echo "Error: python3 not found"
+echo "=== WannaTapThat Build (PyInstaller) ==="
+
+if ! command -v python3 &>/dev/null; then
+    echo "Error: python3 not found" >&2
     exit 1
 fi
 
-# Create virtual environment if needed
+# Virtual environment
 if [ ! -d "venv" ]; then
     echo "Creating virtual environment..."
     python3 -m venv venv
 fi
-
-# Activate and install dependencies
-echo "Installing dependencies..."
+# shellcheck disable=SC1091
 source venv/bin/activate
+
+echo "Installing dependencies..."
 pip install -q --upgrade pip
 pip install -q -r requirements.txt
 
-# Check if Nuitka is available
-if ! python -c "import nuitka" 2>/dev/null; then
-    echo "Installing Nuitka..."
-    pip install -q nuitka
+# Clean previous build
+rm -rf build dist/WannaTapThat.app
+
+echo "Building app bundle..."
+pyinstaller WannaTapThat.spec --noconfirm --clean
+
+APP="dist/WannaTapThat.app"
+if [ ! -d "$APP" ]; then
+    echo "Error: build did not produce $APP" >&2
+    exit 1
 fi
 
-echo ""
-echo "Building app bundle with Nuitka..."
-echo "This may take several minutes on first build..."
-echo ""
-
-# Clean previous builds
-rm -rf dist/WannaTapThat.app dist/WannaTapThat.build dist/WannaTapThat.dist
-
-# Build with Nuitka
-python -m nuitka \
-    --standalone \
-    --onefile \
-    --macos-create-app-bundle \
-    --macos-app-name="WannaTapThat" \
-    --include-data-dir=resources=resources \
-    --output-dir=dist \
-    --remove-output \
-    --assume-yes-for-downloads \
-    gui.py
-
-echo ""
-echo "=== Build Complete ==="
-echo ""
-
-if [ -d "dist/WannaTapThat.app" ]; then
-    echo "App bundle created: dist/WannaTapThat.app"
-    echo ""
-    echo "To create a DMG for distribution:"
-    echo "  brew install create-dmg"
-    echo "  ./create-dmg.sh"
+# Optional: sign with a Developer ID so the bundle can be notarized.
+if [ -n "${CODESIGN_IDENTITY:-}" ]; then
+    echo "Code-signing with: $CODESIGN_IDENTITY"
+    codesign --force --deep --options runtime --timestamp \
+        --entitlements entitlements.plist \
+        --sign "$CODESIGN_IDENTITY" "$APP"
+    codesign --verify --strict --verbose=2 "$APP"
 else
-    echo "Note: App bundle may be at dist/gui.app"
-    echo "Rename it: mv dist/gui.app dist/WannaTapThat.app"
+    echo "No CODESIGN_IDENTITY set -> ad-hoc signature (Gatekeeper will block it)."
 fi
 
 echo ""
-echo "To test without building, run:"
-echo "  python gui.py"
+echo "=== Build complete: $APP ==="
+"$APP/Contents/MacOS/WannaTapThat" --version || true
+echo ""
+echo "Next: ./create-dmg.sh  (for a clean install, sign + notarize per RELEASING.md)"
