@@ -168,11 +168,72 @@ def run_permission_check(find_iphone_window, capture_window):
         print("=" * 50)
 
 
+# ---- Theme ----------------------------------------------------------------
+# Dark UI with a Hinge-ish purple accent. Uses the ttk "clam" theme as the base
+# because (unlike macOS "aqua") it actually honors custom colors on every widget.
+BG = "#1c1c1e"        # window background
+SURFACE = "#2c2c2e"   # entries / opener box
+SURFACE_HI = "#3a3a3c"  # hover / borders
+TEXT = "#f2f2f7"      # primary text
+MUTED = "#8e8e93"     # secondary text
+ACCENT = "#bf5af2"    # purple accent
+ACCENT_HI = "#cf83f5"  # accent hover
+ACCENT_DIM = "#7d3a9e"  # accent pressed
+DANGER = "#ff453a"    # stop button
+
+
+def setup_theme(root):
+    """Apply the dark + purple theme to the whole app. Call before build_ui."""
+    root.configure(bg=BG)
+    style = ttk.Style()
+    if 'clam' in style.theme_names():
+        style.theme_use('clam')
+
+    style.configure('.', background=BG, foreground=TEXT,
+                    font=('Helvetica', 11), focuscolor=BG)
+    style.configure('TFrame', background=BG)
+    style.configure('TLabel', background=BG, foreground=TEXT)
+    style.configure('Header.TLabel', font=('Helvetica', 26, 'bold'), foreground=TEXT)
+    style.configure('Sub.TLabel', font=('Helvetica', 10), foreground=MUTED)
+    style.configure('Section.TLabel', font=('Helvetica', 11, 'bold'), foreground=ACCENT)
+    style.configure('Muted.TLabel', font=('Helvetica', 10), foreground=MUTED)
+    style.configure('Counter.TLabel', font=('Helvetica', 34, 'bold'), foreground=TEXT)
+    style.configure('Skip.TLabel', font=('Helvetica', 12), foreground=ACCENT)
+
+    for widget in ('TCheckbutton', 'TRadiobutton'):
+        style.configure(widget, background=BG, foreground=TEXT,
+                        indicatorbackground=SURFACE, indicatorforeground=TEXT)
+        style.map(widget,
+                  background=[('active', BG)],
+                  foreground=[('disabled', MUTED)],
+                  indicatorbackground=[('selected', ACCENT), ('pressed', ACCENT)],
+                  indicatorcolor=[('selected', ACCENT), ('!selected', SURFACE)])
+
+    style.configure('TEntry', fieldbackground=SURFACE, foreground=TEXT,
+                    insertcolor=TEXT, bordercolor=SURFACE_HI, relief='flat', padding=4)
+    style.configure('TSeparator', background=SURFACE_HI)
+
+    style.configure('Accent.TButton', background=ACCENT, foreground='#ffffff',
+                    font=('Helvetica', 12, 'bold'), borderwidth=0, relief='flat',
+                    padding=(10, 9), focuscolor=ACCENT)
+    style.map('Accent.TButton',
+              background=[('disabled', SURFACE), ('pressed', ACCENT_DIM), ('active', ACCENT_HI)],
+              foreground=[('disabled', MUTED)])
+
+    style.configure('Ghost.TButton', background=SURFACE, foreground=TEXT,
+                    font=('Helvetica', 12, 'bold'), borderwidth=0, relief='flat',
+                    padding=(10, 9), focuscolor=SURFACE)
+    style.map('Ghost.TButton',
+              background=[('disabled', BG), ('pressed', SURFACE), ('active', SURFACE_HI)],
+              foreground=[('disabled', '#5a5a5e'), ('active', DANGER)])
+    return style
+
+
 class WannaTapThatApp:
     def __init__(self, root):
         self.root = root
         self.root.title("WannaTapThat")
-        self.root.geometry("400x780")
+        self.root.geometry("400x900")
         self.root.resizable(False, False)
         self.running = False
 
@@ -186,213 +247,121 @@ class WannaTapThatApp:
         self.build_ui()
 
     def build_ui(self):
-        # Header
-        header_frame = ttk.Frame(self.root)
-        header_frame.pack(fill='x', pady=(20, 5))
+        PAD = 22  # outer horizontal padding
+        IND = PAD + 4  # indent for grouped controls
 
-        ttk.Label(
-            header_frame,
-            text="WannaTapThat",
-            font=('Helvetica', 24, 'bold')
-        ).pack()
+        # ---- Header ------------------------------------------------------
+        header = ttk.Frame(self.root)
+        header.pack(fill='x', pady=(22, 2))
+        ttk.Label(header, text="WannaTapThat", style='Header.TLabel').pack()
+        ttk.Label(header, text="Auto-liker with opener for Hinge",
+                  style='Sub.TLabel').pack()
 
-        ttk.Label(
-            header_frame,
-            text="Auto-liker with opener for Hinge",
-            font=('Helvetica', 10),
-            foreground='gray'
-        ).pack()
-
-        # Opener section
-        ttk.Label(
-            self.root,
-            text="Your Opener:",
-            font=('Helvetica', 11, 'bold')
-        ).pack(anchor='w', padx=20, pady=(20, 5))
+        # ---- Opener ------------------------------------------------------
+        ttk.Label(self.root, text="YOUR OPENER", style='Section.TLabel').pack(
+            anchor='w', padx=PAD, pady=(20, 6))
 
         self.opener_text = tk.Text(
-            self.root,
-            height=3,
-            width=45,
-            font=('Helvetica', 11),
-            wrap='word',
-            fg='#888888',
-            bg='white',
-            insertbackground='black'
+            self.root, height=3, font=('Helvetica', 12), wrap='word',
+            fg=MUTED, bg=SURFACE, insertbackground=TEXT, relief='flat',
+            highlightthickness=1, highlightbackground=SURFACE_HI,
+            highlightcolor=ACCENT, padx=8, pady=6,
         )
-        self.opener_text.pack(padx=20)
+        self.opener_text.pack(padx=PAD, fill='x')
         self.placeholder = "Type your opener here..."
         self.opener_text.insert('1.0', self.placeholder)
         self.opener_text.bind('<FocusIn>', self._on_opener_focus_in)
         self.opener_text.bind('<FocusOut>', self._on_opener_focus_out)
 
-        # Randomize checkbox
+        # ---- Options -----------------------------------------------------
+        ttk.Label(self.root, text="OPTIONS", style='Section.TLabel').pack(
+            anchor='w', padx=PAD, pady=(16, 4))
+
         self.randomize_var = tk.BooleanVar(value=False)
-        ttk.Checkbutton(
-            self.root,
-            text="Randomize (separate openers with |)",
-            variable=self.randomize_var
-        ).pack(anchor='w', padx=20, pady=(5, 0))
-
-        # Like only checkbox (skip opener)
         self.skip_opener_var = tk.BooleanVar(value=False)
-        ttk.Checkbutton(
-            self.root,
-            text="Like only (skip opener)",
-            variable=self.skip_opener_var
-        ).pack(anchor='w', padx=20, pady=(0, 0))
-
-        # Verified only checkbox (skip unverified profiles)
         self.verified_only_var = tk.BooleanVar(value=False)
-        ttk.Checkbutton(
-            self.root,
-            text="Verified only (skip unverified)",
-            variable=self.verified_only_var
-        ).pack(anchor='w', padx=20, pady=(0, 0))
-
-        # Browse checkbox (scroll through profile before liking, more human-like)
         self.browse_var = tk.BooleanVar(value=False)
-        ttk.Checkbutton(
-            self.root,
-            text="Browse profile before liking",
-            variable=self.browse_var
-        ).pack(anchor='w', padx=20, pady=(0, 0))
-
-        # Debug mode checkbox
         self.debug_mode_var = tk.BooleanVar(value=False)
-        ttk.Checkbutton(
-            self.root,
-            text="Debug mode (save screenshots to /tmp/wtt_debug/)",
-            variable=self.debug_mode_var
-        ).pack(anchor='w', padx=20, pady=(0, 5))
 
-        # Separator
-        ttk.Separator(self.root).pack(fill='x', padx=20, pady=10)
+        for text, var in [
+            ("Randomize (separate openers with |)", self.randomize_var),
+            ("Like only (skip opener)", self.skip_opener_var),
+            ("Verified only (skip unverified)", self.verified_only_var),
+            ("Browse profile before liking", self.browse_var),
+            ("Debug mode (screenshots to /tmp/wtt_debug/)", self.debug_mode_var),
+        ]:
+            ttk.Checkbutton(self.root, text=text, variable=var).pack(
+                anchor='w', padx=IND, pady=1)
 
-        # Speed section
-        ttk.Label(
-            self.root,
-            text="Speed:",
-            font=('Helvetica', 11, 'bold')
-        ).pack(anchor='w', padx=20)
+        # ---- Speed -------------------------------------------------------
+        ttk.Separator(self.root).pack(fill='x', padx=PAD, pady=(14, 0))
+        ttk.Label(self.root, text="SPEED", style='Section.TLabel').pack(
+            anchor='w', padx=PAD, pady=(12, 4))
 
         self.speed_var = tk.StringVar(value="normal")
-        speeds = [
+        for text, value in [
             ("Fast (2-3 sec between likes)", "fast"),
             ("Normal (3-5 sec)", "normal"),
-            ("Slow (5-8 sec)", "slow")
-        ]
+            ("Slow (5-8 sec)", "slow"),
+        ]:
+            ttk.Radiobutton(self.root, text=text, variable=self.speed_var,
+                            value=value).pack(anchor='w', padx=IND, pady=1)
 
-        for text, value in speeds:
-            ttk.Radiobutton(
-                self.root,
-                text=text,
-                variable=self.speed_var,
-                value=value
-            ).pack(anchor='w', padx=40)
-
-        # Separator
-        ttk.Separator(self.root).pack(fill='x', padx=20, pady=15)
-
-        # Stop after section
-        ttk.Label(
-            self.root,
-            text="Stop after:",
-            font=('Helvetica', 11, 'bold')
-        ).pack(anchor='w', padx=20)
+        # ---- Stop after --------------------------------------------------
+        ttk.Separator(self.root).pack(fill='x', padx=PAD, pady=(14, 0))
+        ttk.Label(self.root, text="STOP AFTER", style='Section.TLabel').pack(
+            anchor='w', padx=PAD, pady=(12, 4))
 
         self.stop_var = tk.StringVar(value="25")
-
-        # Radio buttons for preset counts
         for text, value in [("10 likes", "10"), ("25 likes", "25"), ("50 likes", "50")]:
-            ttk.Radiobutton(
-                self.root,
-                text=text,
-                variable=self.stop_var,
-                value=value
-            ).pack(anchor='w', padx=40)
+            ttk.Radiobutton(self.root, text=text, variable=self.stop_var,
+                            value=value).pack(anchor='w', padx=IND, pady=1)
 
-        # Custom count option
         custom_frame = ttk.Frame(self.root)
-        custom_frame.pack(anchor='w', padx=40, pady=2)
-
-        ttk.Radiobutton(
-            custom_frame,
-            text="Custom:",
-            variable=self.stop_var,
-            value="custom"
-        ).pack(side='left')
-
+        custom_frame.pack(anchor='w', padx=IND, pady=1)
+        ttk.Radiobutton(custom_frame, text="Custom:", variable=self.stop_var,
+                        value="custom").pack(side='left')
         self.custom_count = ttk.Entry(custom_frame, width=6)
-        self.custom_count.pack(side='left', padx=5)
+        self.custom_count.pack(side='left', padx=6)
         self.custom_count.insert(0, "100")
 
-        # Unlimited option
-        ttk.Radiobutton(
-            self.root,
-            text="Until I stop",
-            variable=self.stop_var,
-            value="unlimited"
-        ).pack(anchor='w', padx=40)
+        ttk.Radiobutton(self.root, text="Until I stop", variable=self.stop_var,
+                        value="unlimited").pack(anchor='w', padx=IND, pady=1)
 
-        # Separator
-        ttk.Separator(self.root).pack(fill='x', padx=20, pady=15)
-
-        # Buttons
+        # ---- Buttons -----------------------------------------------------
         btn_frame = ttk.Frame(self.root)
-        btn_frame.pack(pady=20)
+        btn_frame.pack(pady=(20, 4))
+        self.start_btn = ttk.Button(btn_frame, text="START", command=self.start,
+                                    width=13, style='Accent.TButton')
+        self.start_btn.grid(row=0, column=0, padx=8)
+        self.stop_btn = ttk.Button(btn_frame, text="STOP", command=self.stop,
+                                   width=13, style='Ghost.TButton', state='disabled')
+        self.stop_btn.grid(row=0, column=1, padx=8)
 
-        self.start_btn = ttk.Button(
-            btn_frame,
-            text="START",
-            command=self.start,
-            width=15
-        )
-        self.start_btn.grid(row=0, column=0, padx=10)
-
-        self.stop_btn = ttk.Button(
-            btn_frame,
-            text="STOP",
-            command=self.stop,
-            width=15,
-            state='disabled'
-        )
-        self.stop_btn.grid(row=0, column=1, padx=10)
-
-        # Status section
-        ttk.Separator(self.root).pack(fill='x', padx=20, pady=10)
-
+        # ---- Status ------------------------------------------------------
         status_frame = ttk.Frame(self.root)
-        status_frame.pack(pady=10)
-
-        # Big counter
+        status_frame.pack(pady=(8, 16))
         self.count_var = tk.StringVar(value="0")
-        ttk.Label(
-            status_frame,
-            textvariable=self.count_var,
-            font=('Helvetica', 32, 'bold')
-        ).pack()
-
-        # Small status below
+        ttk.Label(status_frame, textvariable=self.count_var,
+                  style='Counter.TLabel').pack()
+        self.skipped_var = tk.StringVar(value="")
+        ttk.Label(status_frame, textvariable=self.skipped_var,
+                  style='Skip.TLabel').pack()
         self.status_var = tk.StringVar(value="Ready")
-        ttk.Label(
-            status_frame,
-            textvariable=self.status_var,
-            font=('Helvetica', 10),
-            foreground='gray'
-        ).pack(pady=(3, 15))
+        ttk.Label(status_frame, textvariable=self.status_var,
+                  style='Muted.TLabel').pack(pady=(2, 0))
 
     def _on_opener_focus_in(self, event):
         """Clear placeholder when user clicks in opener field."""
         if self.opener_text.get('1.0', 'end').strip() == self.placeholder:
             self.opener_text.delete('1.0', 'end')
-            self.opener_text.config(fg='black', bg='white')
+            self.opener_text.config(fg=TEXT)
 
     def _on_opener_focus_out(self, event):
         """Restore placeholder if field is empty."""
         if not self.opener_text.get('1.0', 'end').strip():
             self.opener_text.insert('1.0', self.placeholder)
-            self.opener_text.config(fg='#888888', bg='white')
+            self.opener_text.config(fg=MUTED)
 
     def get_opener(self) -> str:
         """Get opener text, randomized if enabled."""
@@ -505,6 +474,11 @@ class WannaTapThatApp:
         """Thread-safe count update."""
         self.root.after(0, lambda: self.count_var.set(text))
 
+    def update_skipped(self, n):
+        """Thread-safe skipped-count update (verified-only mode)."""
+        text = f"Skipped {n} unverified" if n > 0 else ""
+        self.root.after(0, lambda: self.skipped_var.set(text))
+
     def run_liker(self):
         """Main liker loop - runs in background thread."""
         global debug_logger
@@ -547,6 +521,7 @@ class WannaTapThatApp:
         max_failures = 5
         dot_cycle = 0
         typed_on_current_profile = False  # Track if we've already typed opener
+        self.update_skipped(0)  # clear any count from a previous run
 
         if verified_only:
             debug_logger.log("Verified-only mode ON: unverified profiles will be skipped")
@@ -738,7 +713,8 @@ class WannaTapThatApp:
                         consecutive_failures = 0
                         typed_on_current_profile = False
                         debug_logger.log(f"Skipped unverified profile. Total skipped: {skipped}")
-                        self.update_status(f"Skipped unverified ({skipped})")
+                        self.update_status("Skipped unverified")
+                        self.update_skipped(skipped)
                         if consecutive_skips >= MAX_CONSECUTIVE_SKIPS:
                             self.update_status(f"Stopped: {consecutive_skips} unverified in a row")
                             debug_logger.log("Hit consecutive-skip safety cap - stopping")
@@ -956,6 +932,7 @@ class WannaTapThatApp:
         def finish():
             count_text = f"{sent}" if max_likes < 0 else f"{sent} / {max_likes}"
             self.count_var.set(count_text)
+            self.skipped_var.set(f"Skipped {skipped} unverified" if skipped > 0 else "")
             self.status_var.set("Done!")
             self.start_btn.config(state='normal')
             self.stop_btn.config(state='disabled')
@@ -984,11 +961,7 @@ def main():
         return
 
     root = tk.Tk()
-
-    # Set a nice style
-    style = ttk.Style()
-    if 'aqua' in style.theme_names():
-        style.theme_use('aqua')  # macOS native look
+    setup_theme(root)  # dark + purple theme (must run before building widgets)
 
     app = WannaTapThatApp(root)
 
