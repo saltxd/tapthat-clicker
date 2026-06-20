@@ -35,39 +35,29 @@ You'll grant the two permissions during setup (below).
 
 ## Install
 
-### 1. Download
+### Easiest — one command
 
-Go to the [**Releases**](../../releases) page and download the latest **`WannaTapThat.dmg`**.
-
-### 2. Drag to Applications
-
-Open the `.dmg`, then drag **WannaTapThat** onto the **Applications** folder.
-
-### 3. Open it the first time (Gatekeeper)
-
-This app is **not signed by an Apple Developer account or notarized** (that costs money the author hasn't spent yet). Because of that, macOS blocks the first launch with a message like *"Apple could not verify 'WannaTapThat' is free of malware"* or *"WannaTapThat is damaged and can't be opened."* This is expected for an unsigned app. Open it anyway with **one** of these:
-
-**Option A — "Open Anyway" in System Settings (recommended)**
-
-1. Double-click **WannaTapThat** once. macOS blocks it — dismiss the warning (**Done** / **Cancel**).
-2. Open **System Settings → Privacy & Security** and scroll down to the message *"WannaTapThat was blocked to protect your Mac."*
-3. Click **Open Anyway**, then confirm (you may need to enter your password).
-
-It opens, and every launch after that is normal.
-
-**Option B — One Terminal command (most reliable; also fixes "is damaged")**
-
-Open **Terminal**, paste this, and press Return:
+Open **Terminal** (press ⌘-Space, type "Terminal", hit Return), then paste this and press Return:
 
 ```bash
-xattr -dr com.apple.quarantine /Applications/WannaTapThat.app
+curl -fsSL https://raw.githubusercontent.com/saltxd/tapthat-clicker/main/install.sh | bash
 ```
 
-Then open the app normally. This removes the "downloaded from the internet" quarantine flag that triggers Gatekeeper.
+That's it — it downloads the app, installs it to **Applications**, gets it past macOS's "unidentified app" block automatically, and opens it. Skip to [step: grant permissions](#grant-the-two-permissions). *(Curious / cautious? The script is short — read it [here](install.sh) first.)*
 
-> **On macOS Sequoia, the old "right-click → Open" trick no longer works** for unsigned apps — use **Open Anyway** or the Terminal command above.
+### Or install manually (no Terminal)
 
-### 4. Grant the two permissions
+1. **Download** the latest **`WannaTapThat.dmg`** from the [**Releases**](../../releases) page.
+2. Open the `.dmg` and drag **WannaTapThat** onto the **Applications** folder.
+3. **Get past Gatekeeper.** This app isn't signed by an Apple Developer account or notarized (that costs $99/yr the author hasn't spent), so macOS blocks the first launch with *"Apple could not verify 'WannaTapThat' is free of malware"* or *"is damaged."* That's expected for an unsigned app:
+   - Double-click **WannaTapThat** once — it gets blocked; dismiss the warning.
+   - Open **System Settings → Privacy & Security**, scroll to *"WannaTapThat was blocked to protect your Mac,"* and click **Open Anyway** → confirm.
+
+   It opens, and every launch after that is normal.
+
+   > On macOS Sequoia the old "right-click → Open" trick no longer works for unsigned apps — use **Open Anyway** above, or run `xattr -dr com.apple.quarantine /Applications/WannaTapThat.app` in Terminal and open it normally.
+
+### Grant the two permissions
 
 The first time you run it, macOS will prompt you for permissions. If it doesn't, grant them manually:
 
