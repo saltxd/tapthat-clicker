@@ -45,27 +45,27 @@ Open the `.dmg`, then drag **WannaTapThat** onto the **Applications** folder.
 
 ### 3. Open it the first time (Gatekeeper)
 
-This app is **not signed by an Apple Developer account or notarized** (that costs money the author hasn't spent yet). Because of that, macOS will refuse to open it on the first try with a message like *"WannaTapThat can't be opened because Apple cannot check it for malicious software"* or *"WannaTapThat is damaged and can't be opened."*
+This app is **not signed by an Apple Developer account or notarized** (that costs money the author hasn't spent yet). Because of that, macOS blocks the first launch with a message like *"Apple could not verify 'WannaTapThat' is free of malware"* or *"WannaTapThat is damaged and can't be opened."* This is expected for an unsigned app. Open it anyway with **one** of these:
 
-This is expected. Use **one** of these to get past it:
+**Option A — "Open Anyway" in System Settings (recommended)**
 
-**Option A — Right-click → Open**
+1. Double-click **WannaTapThat** once. macOS blocks it — dismiss the warning (**Done** / **Cancel**).
+2. Open **System Settings → Privacy & Security** and scroll down to the message *"WannaTapThat was blocked to protect your Mac."*
+3. Click **Open Anyway**, then confirm (you may need to enter your password).
 
-1. In Applications, **right-click** (or Control-click) **WannaTapThat**.
-2. Choose **Open**.
-3. In the dialog that appears, click **Open** again.
+It opens, and every launch after that is normal.
 
-You only have to do this once. (If you only see a "Move to Trash" / "Cancel" dialog with no Open button, use Option B.)
+**Option B — One Terminal command (most reliable; also fixes "is damaged")**
 
-**Option B — Terminal command**
-
-Open **Terminal** and paste this, then press Return:
+Open **Terminal**, paste this, and press Return:
 
 ```bash
 xattr -dr com.apple.quarantine /Applications/WannaTapThat.app
 ```
 
 Then open the app normally. This removes the "downloaded from the internet" quarantine flag that triggers Gatekeeper.
+
+> **On macOS Sequoia, the old "right-click → Open" trick no longer works** for unsigned apps — use **Open Anyway** or the Terminal command above.
 
 ### 4. Grant the two permissions
 

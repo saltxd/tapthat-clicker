@@ -19,15 +19,17 @@ A macOS app that automates "liking" profiles on Hinge by driving **iPhone Mirror
 - **Screen Recording** and **Accessibility** permissions granted to the app (System Settings → Privacy & Security)
 
 ### Install (important — Gatekeeper)
-This build is **not** code-signed with an Apple Developer ID or notarized, so macOS Gatekeeper will block it on first launch ("can't be opened because Apple cannot check it for malicious software," or "is damaged"). To open it anyway:
+This build is **not** code-signed with an Apple Developer ID or notarized, so macOS Gatekeeper will block it on first launch ("Apple could not verify it is free of malware," or "is damaged"). To open it anyway:
 
-1. Drag **WannaTapThat.app** to **/Applications**.
-2. **Right-click the app → Open → Open** (don't just double-click).
+1. Drag **WannaTapThat.app** to **/Applications** and double-click it once (it gets blocked — dismiss the warning).
+2. Open **System Settings → Privacy & Security**, scroll to *"WannaTapThat was blocked…"*, and click **Open Anyway**.
 
-If that still fails, clear the quarantine attribute in Terminal:
+Or, the most reliable one-liner (also fixes "is damaged") — run in Terminal, then open the app:
 ```bash
 xattr -dr com.apple.quarantine /Applications/WannaTapThat.app
 ```
+
+> On macOS Sequoia, "right-click → Open" no longer bypasses Gatekeeper for unsigned apps — use **Open Anyway** or the command above.
 
 Note: because the build isn't signed with a stable Developer ID, a future update gets a new code signature, which **resets the Screen Recording / Accessibility grants** — you'll need to re-grant them after updating.
 
