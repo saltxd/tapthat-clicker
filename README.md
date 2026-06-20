@@ -6,7 +6,7 @@ WannaTapThat is a small macOS app that watches your iPhone Mirroring window, fin
 
 ![WannaTapThat in action](assets/demo.gif)
 
-*Demo: the app (left) auto-liking on Hinge. The phone screen is intentionally pixelated to protect real people's profiles. ([full video](assets/demo.mp4))*
+*Demo: the app (left) auto-liking on Hinge. The phone screen is intentionally pixelated to protect real people's profiles.*
 
 ---
 
