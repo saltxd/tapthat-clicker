@@ -4,6 +4,10 @@
 
 WannaTapThat is a small macOS app that watches your iPhone Mirroring window, finds the heart button on each Hinge profile, taps it, types the opener you wrote, and hits send — over and over, so you don't have to. It uses on-screen image matching (the same idea as a person looking at the screen and tapping), with human-like delays and random tap offsets.
 
+![WannaTapThat in action](assets/demo.gif)
+
+*Demo: the app (left) auto-liking on Hinge. The phone screen is intentionally pixelated to protect real people's profiles. ([full video](assets/demo.mp4))*
+
 ---
 
 > ## ⚠️ Please read this before you download
