@@ -18,11 +18,13 @@ from Quartz import (
     kCGWindowListOptionIncludingWindow,
     kCGWindowImageBoundsIgnoreFraming,
     CGEventCreateMouseEvent,
+    CGEventCreateScrollWheelEvent,
     CGEventPost,
     kCGEventMouseMoved,
     kCGEventLeftMouseDown,
     kCGEventLeftMouseUp,
     kCGHIDEventTap,
+    kCGScrollEventUnitPixel,
 )
 from Quartz.CoreGraphics import CGPointMake
 from AppKit import NSWorkspace, NSApplicationActivateIgnoringOtherApps
@@ -262,6 +264,36 @@ def click_at(img_x, img_y, window):
     # Mouse up
     up_event = CGEventCreateMouseEvent(None, kCGEventLeftMouseUp, point, 0)
     CGEventPost(kCGHIDEventTap, up_event)
+
+
+def scroll_at(img_x, img_y, amount, window, steps=12, step_delay=0.02):
+    """Scroll the content under the given image point with a smooth swipe.
+
+    amount: total scroll in pixel units. NEGATIVE scrolls the profile DOWN
+    (reveals content further down); POSITIVE scrolls back UP toward the top.
+    (This matches macOS scroll-wheel sign: positive wheel delta = content moves
+    down = view moves up.) Delivered in `steps` increments to mimic a finger
+    swipe rather than one big jump. iOS rubber-bands at the top, so over-
+    scrolling up simply settles back at the exact top of the profile.
+    """
+    screen_x, screen_y = image_to_screen_coords(img_x, img_y, window)
+
+    if window.get("owner"):
+        activate_app(window["owner"])
+
+    # Park the cursor over the iPhone content so the scroll lands on it.
+    point = CGPointMake(float(screen_x), float(screen_y))
+    move_event = CGEventCreateMouseEvent(None, kCGEventMouseMoved, point, 0)
+    CGEventPost(kCGHIDEventTap, move_event)
+    time.sleep(0.05)
+
+    per_step = int(amount / steps) if steps else amount
+    if per_step == 0:
+        per_step = 1 if amount > 0 else -1
+    for _ in range(steps):
+        ev = CGEventCreateScrollWheelEvent(None, kCGScrollEventUnitPixel, 1, per_step)
+        CGEventPost(kCGHIDEventTap, ev)
+        time.sleep(step_delay)
 
 
 def type_text(text):

@@ -103,6 +103,29 @@ class DebugLogger:
 # Global debug logger instance
 debug_logger = DebugLogger(enabled=False)
 
+# Verified-only tuning
+VERIFIED_THRESHOLD = 0.78   # real verified badges match ~0.90-1.0; non-badge regions ~0.65
+VERIFIED_REGION_FRAC = 0.45  # badge sits near the name, in the top ~45% of the screen
+SKIP_THRESHOLD = 0.70        # X (skip) button match confidence
+MAX_CONSECUTIVE_SKIPS = 200  # safety: stop if the deck is essentially all unverified
+
+
+def is_profile_verified(image, find_icon, threshold=VERIFIED_THRESHOLD,
+                        region_frac=VERIFIED_REGION_FRAC):
+    """Return (is_verified, best_confidence) for the current Hinge profile.
+
+    The verified badge ("Verified" + purple checkmark) lives next to the name,
+    so we only search the top region. This both speeds up matching and avoids
+    false positives from unrelated purple UI lower on the profile.
+    """
+    top = image.crop((0, 0, image.size[0], int(image.size[1] * region_frac)))
+    match = find_icon(top, "hinge_verified.png", threshold=threshold)
+    if match:
+        return True, match[2]
+    best = find_icon(top, "hinge_verified.png", threshold=threshold,
+                     return_best_match=True)
+    return False, (best[2] if best else 0.0)
+
 print("=" * 50)
 print("DEBUG: WannaTapThat launch info")
 print(f"Running from: {sys.executable}")
@@ -149,7 +172,7 @@ class WannaTapThatApp:
     def __init__(self, root):
         self.root = root
         self.root.title("WannaTapThat")
-        self.root.geometry("400x720")
+        self.root.geometry("400x780")
         self.root.resizable(False, False)
         self.running = False
 
@@ -217,6 +240,22 @@ class WannaTapThatApp:
             self.root,
             text="Like only (skip opener)",
             variable=self.skip_opener_var
+        ).pack(anchor='w', padx=20, pady=(0, 0))
+
+        # Verified only checkbox (skip unverified profiles)
+        self.verified_only_var = tk.BooleanVar(value=False)
+        ttk.Checkbutton(
+            self.root,
+            text="Verified only (skip unverified)",
+            variable=self.verified_only_var
+        ).pack(anchor='w', padx=20, pady=(0, 0))
+
+        # Browse checkbox (scroll through profile before liking, more human-like)
+        self.browse_var = tk.BooleanVar(value=False)
+        ttk.Checkbutton(
+            self.root,
+            text="Browse profile before liking",
+            variable=self.browse_var
         ).pack(anchor='w', padx=20, pady=(0, 0))
 
         # Debug mode checkbox
@@ -475,6 +514,7 @@ class WannaTapThatApp:
             capture_window,
             find_icon,
             click_at,
+            scroll_at,
             type_text,
             human_type,
             random_delay,
@@ -497,12 +537,19 @@ class WannaTapThatApp:
         debug_logger.log("=" * 50)
 
         max_likes = self.get_max_likes()
+        verified_only = self.verified_only_var.get()
+        browse = self.browse_var.get()
         sent = 0
+        skipped = 0  # unverified profiles skipped (verified-only mode)
+        consecutive_skips = 0  # safety: bail if the whole deck is unverified
         consecutive_failures = 0
         capture_failures = 0
         max_failures = 5
         dot_cycle = 0
         typed_on_current_profile = False  # Track if we've already typed opener
+
+        if verified_only:
+            debug_logger.log("Verified-only mode ON: unverified profiles will be skipped")
 
         while self.running:
             # Check if we've hit the limit
@@ -659,6 +706,91 @@ class WannaTapThatApp:
                     consecutive_failures += 1
                     time.sleep(1)
                     continue
+                # Verified-only gate: heart found means we're on a profile, so
+                # check for the verified badge before liking. If absent, tap the
+                # X (skip) button and move on instead.
+                if verified_only:
+                    is_verified, v_conf = is_profile_verified(image, find_icon)
+                    if is_verified:
+                        debug_logger.log(f"Verified badge found (conf={v_conf:.3f}) - liking")
+                        consecutive_skips = 0
+                    else:
+                        debug_logger.log(f"No verified badge (best conf={v_conf:.3f} < "
+                                         f"{VERIFIED_THRESHOLD}) - skipping profile")
+                        skip_pos = find_icon(image, "skip.png", threshold=SKIP_THRESHOLD,
+                                             min_y=int(image.size[1] * 0.80))
+                        if not skip_pos:
+                            best_skip = find_icon(image, "skip.png", threshold=SKIP_THRESHOLD,
+                                                  min_y=int(image.size[1] * 0.80),
+                                                  return_best_match=True)
+                            debug_logger.log_match_result("skip.png", None, SKIP_THRESHOLD,
+                                                          best_match=best_skip)
+                            debug_logger.save_screenshot(image, "skip_button_not_found")
+                            self.update_status("Skip button not found")
+                            consecutive_failures += 1
+                            time.sleep(1)
+                            continue
+                        sox = random.randint(-15, 15)
+                        soy = random.randint(-15, 15)
+                        click_at(skip_pos[0] + sox, skip_pos[1] + soy, window)
+                        skipped += 1
+                        consecutive_skips += 1
+                        consecutive_failures = 0
+                        typed_on_current_profile = False
+                        debug_logger.log(f"Skipped unverified profile. Total skipped: {skipped}")
+                        self.update_status(f"Skipped unverified ({skipped})")
+                        if consecutive_skips >= MAX_CONSECUTIVE_SKIPS:
+                            self.update_status(f"Stopped: {consecutive_skips} unverified in a row")
+                            debug_logger.log("Hit consecutive-skip safety cap - stopping")
+                            break
+                        # Brief wait for the next profile to load, then re-loop
+                        random_delay(0.8, 1.5, should_stop=lambda: not self.running)
+                        continue
+
+                # Browse: scroll down to "read" the profile, then over-scroll back
+                # to the top (iOS rubber-bands, so we land at the exact top again)
+                # before liking the first heart. Only runs on profiles we'll like
+                # (verified gate above already skipped unverified ones).
+                if browse:
+                    self.update_status("Browsing...")
+                    bcx = image.size[0] // 2
+                    bcy = int(image.size[1] * 0.45)
+                    down = -random.randint(260, 420)
+                    debug_logger.log(f"Browse: scrolling down ({down}) to view profile")
+                    scroll_at(bcx, bcy, amount=down, window=window)
+                    if not random_delay(1.0, 2.0, should_stop=lambda: not self.running):
+                        break
+                    # Over-scroll up past the top to guarantee we're back at the start
+                    scroll_at(bcx, bcy, amount=abs(down) + 400, window=window)
+                    if not random_delay(0.4, 0.7, should_stop=lambda: not self.running):
+                        break
+
+                    # Re-find the heart at the (now top) position with retries
+                    image = capture_window(window["id"])
+                    if image is None:
+                        debug_logger.log("Browse: capture failed after scroll-back")
+                        consecutive_failures += 1
+                        continue
+                    debug_logger.save_screenshot(image, "browse_back_at_top")
+                    heart_pos = None
+                    for _ in range(3):
+                        cand = find_icon(image, "heart.png", threshold=heart_threshold,
+                                         topmost=True, min_x=min_heart_x, min_y=min_heart_y)
+                        if cand:
+                            heart_pos = cand
+                            break
+                        time.sleep(0.3)
+                        image = capture_window(window["id"])
+                        if image is None:
+                            break
+                    if not heart_pos:
+                        debug_logger.log("Browse: heart not found after scroll-back - skipping like")
+                        self.update_status("No heart after browse")
+                        consecutive_failures += 1
+                        time.sleep(1)
+                        continue
+                    debug_logger.log(f"Browse complete; heart at ({heart_pos[0]}, {heart_pos[1]})")
+
                 # Random offset in image coords (retina 2x, so /2 for screen px)
                 offset_x = random.randint(-20, 20)
                 offset_y = random.randint(-8, 8)
