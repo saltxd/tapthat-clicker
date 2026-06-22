@@ -19,7 +19,7 @@ except ImportError:
     fcntl = None
 
 APP_NAME = "WannaTapThat"
-APP_VERSION = "1.0.0"
+APP_VERSION = "1.0.1"
 
 
 def app_support_dir():
